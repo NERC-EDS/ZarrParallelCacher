@@ -1,7 +1,7 @@
 from zarr_parallel import Dataset
 from FRAME_FM.generic_data_loader import BigGeoDataset
 
-ds = Dataset(uri = 'path/to/kerchunk.json',engine='kerchunk')
+ds = Dataset(croissant = 'path/to/croissant')
 
 ds.roll(dim='longitude', shift=None)
 ds.reverse_axis(dim='latitude')
