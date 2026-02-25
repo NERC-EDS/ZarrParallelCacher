@@ -11,6 +11,30 @@ logger = logging.getLogger('ZP.' + __name__)
 logger.addHandler(logstream)
 logger.propagate = False
 
+import os
+
+from dask.distributed import Client, LocalCluster
+
+# SLURM provides memory in MB
+mem_per_node = os.environ.get("SLURM_MEM_PER_NODE")
+mem_per_cpu = os.environ.get("SLURM_MEM_PER_CPU")
+cpus = os.environ.get("SLURM_CPUS_PER_TASK", "1")
+
+if mem_per_node:
+    memory_limit = f"{int(mem_per_node)}MB"
+elif mem_per_cpu and cpus:
+    memory_limit = f"{int(mem_per_cpu) * int(cpus)}MB"
+else:
+    memory_limit = "auto"  # fallback
+
+cluster = LocalCluster(
+    n_workers=1,
+    threads_per_worker=int(cpus),
+    memory_limit=memory_limit,
+)
+
+client = Client(cluster)
+
 # Takes a YAML config file as input that looks like this
 
 # dataset:
