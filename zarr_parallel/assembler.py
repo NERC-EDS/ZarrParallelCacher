@@ -10,6 +10,7 @@ import xarray as xr
 import yaml
 
 from zarr_parallel.utils import logstream
+from dask.distributed import Client, LocalCluster, get_worker, WorkerPlugin
 
 logger = logging.getLogger('ZP.' + __name__)
 logger.addHandler(logstream)
@@ -21,11 +22,30 @@ SLURM_CONFIG = """#!/bin/bash
 #SBATCH --account=cedaproc
 #SBATCH --qos=standard
 #SBATCH --job-name=EDS_AI_CACHE_JAS
-#SBATCH --time=30:00
-#SBATCH --mem=2G
+#SBATCH --time=
+#SBATCH --mem=
 #SBATCH -o %A_%a.out
 #SBATCH -e %A_%a.err
 """.split('\n')
+
+class IDPlugin(WorkerPlugin):
+    def setup(self, worker):
+        worker.my_id = worker.id
+
+def setup(dask_worker):
+    from dask.distributed import Worker
+    assert isinstance(dask_worker, Worker)
+
+def process_job(job_id):
+    dask_worker = get_worker()
+    print(f'Worker {dask_worker.id} processing job {job_id}')
+    return True
+
+def get_id(dask_worker):
+    return dask_worker.id
+
+def set_jobs(dask_worker, job_list):
+    dask_worker.my_jobs = job_list
 
 def divide_workers(workers, dim_bins, dims):
 
@@ -45,8 +65,15 @@ class ZarrParallelAssembler:
         self.uri           = selector['uri']
         self.engine        = 'kerchunk' # Discuss an option for this?
         self.variables     = selector['variables']
-        self.dimensions    = selector['common']['subset']
         self.transforms    = selector['common']['pre_transforms']
+        self.dimensions = None
+        for transform in self.transforms:
+            if transform['type'] in ['sel','isel']:
+                self.dimensions    = dict(transform)
+                self.dimensions.pop('type')
+
+        if self.dimensions is None:
+            raise ValueError('No selection criteria applied')
         self.output_chunks = selector['common'].get('chunks')
 
         # Derived properties
@@ -68,21 +95,46 @@ class ZarrParallelAssembler:
                 if len(chunkset) > 1:
                     self.chunked_dims[var].append(dim)
 
+        chunked_dims = set([tuple(c) for c in self.chunked_dims.values()])
+        if len(chunked_dims) > 1:
+            raise ValueError('Parallel caching not supported for different structures within the same zarr store')
+        self.chunked_dims = list(chunked_dims)[0]
+
         # If the source chunks differ between variables, raise an 
         # error as this is not yet supported.
 
         ds.close()
 
-    @property
-    def zarr_store(self):
-        return f'{self.cache_dir}/{self.uri.split("/")[-1].split(".")[0]}.zarr'
+    def zarr_store(self, cache_dir: str) -> str:
+        return f'{cache_dir}/{self.uri.split("/")[-1].split(".")[0]}.zarr'
 
     def _obtain_ds(self) -> xr.Dataset:
         """
         Obtain the xarray dataset source object for the parent dataset
         """
         return xr.open_dataset(self.uri, engine=self.engine, chunks='auto')
+    
+    def _apply_transforms(self) -> list[xr.DataArray]:
+        """
+        Apply pre-transforms from the selector to the dataset
+        """
 
+        ds = self._obtain_ds()
+        for transform in self.transforms:
+            transform_type = transform.pop('type')
+            ds = getattr(ds, transform_type)(**transform)
+
+        ds_transformed = []
+        for var, vtransforms in self.variables.items():
+            ds_var = ds[var]
+            for transform in vtransforms:
+                transform_type = transform.pop('type')
+
+                ds_var = getattr(ds_var, transform_type)(**transform)
+            ds_transformed.append(ds_var)
+
+        return ds_transformed
+    
     def _determine_region_extents(self) -> dict:
         """
         Determine from the provided selector the specs of the dim.
@@ -141,7 +193,7 @@ class ZarrParallelAssembler:
 
             # Should be doing this per var?
             source_chunks = self.source_chunks[dim]
-            output_chunks = self.output_chunks[dim]
+            output_chunks = self.output_chunks.get(dim, source_chunks)
 
             min_region = math.lcm(int(output_chunks), int(source_chunks))
 
@@ -177,16 +229,26 @@ class ZarrParallelAssembler:
 
         return dim_spec, actual_workers
     
-    def _create_empty_zarr(self, worker_config: dict, var: str):
+    def _create_empty_zarr(self, worker_config: dict, vars: list):
 
-        ds = self._obtain_ds()
+        ds_transformed = self._apply_transforms()
         worker_dims = worker_config['data']['dimensions']
 
         ds_dims_only = xr.Dataset({
-            d: ds[d].isel(**{
+            d: ds_transformed[0][d].isel(**{
                 d: slice(v['source_min'],v['source_max']) 
             }) for d, v in worker_dims.items()
         })
+        
+        # Copy global attributes
+        ds_dims_only.attrs = ds_transformed[0].attrs
+
+        # Copy dimension encoding
+        for dim in worker_dims.keys():
+            encoding = ds_transformed[0][dim].encoding
+            encoding.pop('chunks',None)
+            encoding.pop('preferred_chunks',None)
+            ds_dims_only[dim].encoding = encoding
 
         # Add encoding per dimension (compressors, filters etc.)
 
@@ -198,7 +260,9 @@ class ZarrParallelAssembler:
         empty_shape = [v['total_region'] for v in worker_dims.values()]
         empty_var = da.empty(empty_shape, chunks=chunks)
 
-        ds_dims_only[var] = xr.DataArray(empty_var, dims=list(worker_dims.keys()))
+        for vx, var in enumerate(vars):
+            ds_dims_only[var] = xr.DataArray(empty_var, dims=list(worker_dims.keys()))
+            ds_dims_only[var].attrs = ds_transformed[vx][var].attrs
 
         # Force Zarr to use Dask chunk structure
         # Preserve non-chunk encoding attributes
@@ -222,7 +286,9 @@ class ZarrParallelAssembler:
             generate_stats: bool = False,
             deploy_mode: str = 'SLURM',
             await_completion: bool = True,
-            simultaneous_worker_limit: int = 50
+            simultaneous_worker_limit: int = 50,
+            memory_limit: str = "2GB",
+            worker_timeout: str = "30:00"
         ):
         """
         Method to cache selected data to a zarr store
@@ -242,57 +308,106 @@ class ZarrParallelAssembler:
                 'uri': self.uri,
                 'engine': self.engine,
                 'kwargs':{},
-                'zarr_cache': self.zarr_store
+                'zarr_cache': self.zarr_store(cache_dir)
             }
         }
+        worker_config = dict(worker_config_tmpl)
+        worker_config['data'] = {
+            'variables': [v for v in self.variables.keys()],
+            'dimensions': dim_spec
+        }
 
-        for var, vinf in self.variables.items():
-            worker_config = dict(worker_config_tmpl)
-            worker_config['data'] = {
-                'variable': var,
-                'dimensions': dim_spec
-            }
+        # Create empty zarr structure
+        if not os.path.isdir(worker_config['dataset']['zarr_cache']):
+            # Add selector hash, see writer in repo.
+            self._create_empty_zarr(worker_config, [v for v in self.variables.keys()])
 
-            # Create empty zarr structure
-            if not os.path.isdir(worker_config['dataset']['zarr_cache']):
-                # Add selector hash, see writer in repo.
-                self._create_empty_zarr(worker_config, var)
+        # Output worker_config somewhere central
 
-            # Output worker_config somewhere central
+        # Deploy
+        # - array job (SLURM) with number of workers per div
+        # - pre-transforms added to worker config
+        #.  - adjust above chunk assembly if necessary due to transforms.
+        vlabel = '_'.join(self.variables.keys())
 
-            # Deploy
-            # - array job (SLURM) with number of workers per div
-            # - pre-transforms added to worker config
-            #.  - adjust above chunk assembly if necessary due to transforms.
+        cfg = "_".join([self.zarr_store(cache_dir),vlabel,"tmp"])
+        worker_config_file = cfg.replace('zarr_cache','zarr_cache/temp') + '.yaml'
 
-            cfg = "_".join([self.zarr_store,var,"tmp"])
-            worker_config_file = f'{cache_dir}/temp/{cfg}.yaml'
+        with open(worker_config_file,'w') as f:
+            yaml.dump(worker_config, f)
 
-            with open(worker_config_file,'w') as f:
-                yaml.dump(worker_config, f)
+        if deploy_mode == 'SLURM':
 
-            if deploy_mode == 'SLURM':
+            slurm_config_file = f'{cache_dir}/temp/{cfg}.sbatch'
 
-                slurm_config_file = f'{cache_dir}/temp/{cfg}.sbatch'
+            VENVPATH     = os.environ.get('VIRTUAL_ENV')
+            slurm_config = list(SLURM_CONFIG)
 
-                VENVPATH     = os.environ.get('VIRTUAL_ENV')
-                slurm_config = list(SLURM_CONFIG)
+            slurm_config[5] += worker_timeout
+            slurm_config[6] += memory_limit
 
-                #slurm_config.append(f'source {VENVPATH}/bin/activate')
-                slurm_config.append('module load jaspy')
+            #slurm_config.append(f'source {VENVPATH}/bin/activate')
+            slurm_config.append('module load jaspy')
 
-                slurm_config.append(f'python /home/users/dwest77/cedadev/AI/FRAME-FM/tests/write_region.py {worker_config_file} $SLURM_ARRAY_TASK_ID')
+            slurm_config.append(f'python /home/users/dwest77/cedadev/AI/FRAME-FM/tests/write_region.py {worker_config_file} $SLURM_ARRAY_TASK_ID')
 
-                with open(slurm_config_file,'w') as f:
-                    f.write('\n'.join(slurm_config))
+            with open(slurm_config_file,'w') as f:
+                f.write('\n'.join(slurm_config))
 
-                # Dryrun mode logs the slurm file and command
-                os.system(f'sbatch --array=0-{actual_workers-1}%{simultaneous_worker_limit} {slurm_config_file}')
+            # Dryrun mode logs the slurm file and command
+            os.system(f'sbatch --array=0-{actual_workers-1}%{simultaneous_worker_limit} {slurm_config_file}')
 
-                if await_completion:
-                    # Needs to know location of 'out' files only.
-                    #await_completion(worker_config_file)
-                    raise NotImplementedError
+            if await_completion:
+                # Needs to know location of 'out' files only.
+                #await_completion(worker_config_file)
+                raise NotImplementedError
+        
+        elif deploy_mode == 'dask_distributed':
+
+            num_dask_workers = simultaneous_worker_limit
+
+            cluster = LocalCluster(
+                n_workers=num_dask_workers,
+                threads_per_worker=1,#int(cpus),
+                memory_limit=memory_limit,
+            )
+
+            client = Client(cluster)
+            client.register_worker_callbacks(setup)
+
+            # Dask cluster - fewer nodes but can set workers to run multiple jobs.
+            num_dask_workers = simultaneous_worker_limit
+
+            jobs_per_worker = int(num_workers/simultaneous_worker_limit)
+            worker_ids = list(client.run(get_id).values())
+            job_ids = list(range(num_workers))
+
+            futures = client.scatter(job_ids, broadcast=False)
+            results = client.map(process_job, futures)
+
+            complete = False
+            while not complete:
+                msgs = 0
+                is_complete = True
+                for msg in results:
+                    if msg.result() is None:
+                        is_complete = False
+                    else:
+                        msgs += 1
+
+                complete = is_complete
+                print('Awaiting all results:', len(results)-msgs)
+
+            print("\n--- Summary ---")
+            print(f'Results: {len(results)}, Jobs: {num_workers}')
+            success, failed = 0,0
+            for msg in results:
+                if msg.result():
+                    success += 1
+                else:
+                    failed += 1
+            print(f' > Success: {success}')
+            print(f' > Failed: {failed}')
 
 if __name__ == '__main__':
     selectors= [
@@ -300,7 +415,7 @@ if __name__ == '__main__':
                 "uri": "https://gws-access.jasmin.ac.uk/public/eds_ai/era5_repack/aggregations/data/ecmwf-era5X_oper_an_sfc_2000_2020_2d_repack.kr1.0.json",
                 "common": {
                     "pre_transforms": [
-                        {"type": "subset", "time": ["2000-03-02 00:00:00", "2010-01-10 23:00:00"], "latitude": [60, -67.8], "longitude": [10, 137.8]},
+                        {"type": "sel", "time": ["2000-03-02 00:00:00", "2010-01-10 23:00:00"], "latitude": [60, -67.8], "longitude": [10, 137.8]},
                         {"type": "rename", "var_id": "d2m", "new_name": "dewpoint_temperature"},
                         {"type": "roll", "dim": "longitude", "shift": None}, # Roll required BEFORE subsetting
                         {"type": "reverse_axis", "dim": "latitude"}
@@ -335,4 +450,4 @@ if __name__ == '__main__':
             }]
     
     zp = ZarrParallelAssembler(selector=selectors[0])
-    zp.cache(num_workers=500,cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache',await_completion=True)
+    zp.cache(num_workers=50,cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache',deploy_mode='dask_distributed',simultaneous_worker_limit=4)
