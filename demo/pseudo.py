@@ -3,6 +3,8 @@ from FRAME_FM.generic_data_loader import BigGeoDataset
 
 ds = Dataset(croissant = 'path/to/croissant')
 
+## Xarray-native Pre-transforms
+
 ds.roll(dim='longitude', shift=None)
 ds.reverse_axis(dim='latitude')
 
@@ -12,11 +14,17 @@ ds.sel(
     longitude=slice(10, 137.8)
 )
 
-ds.rename('t2m','surface_temperature')
+#ds.rename('t2m','surface_temperature')
 ds.rename('d2m','dewpoint_temperature')
 
+d2m = ds['d2m']
+
+## Pass to BigGeoDataset
+
 geo_ds = BigGeoDataset(
-    selectors=[ds],
+    selectors=[d2m],
     cache_dir='',
     # remove pre-transforms, now handled within each selector.
 )
+
+# Second time running would show that the cache already exists so can proceed from below...
