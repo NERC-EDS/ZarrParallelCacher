@@ -1,3 +1,7 @@
+__author__    = "Daniel Westwood"
+__contact__   = "daniel.westwood@stfc.ac.uk"
+__copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
+
 import logging
 import math
 import sys
@@ -6,6 +10,7 @@ import xarray as xr
 import yaml
 
 from zarr_parallel.utils import logstream
+from zarr_parallel.transforms import apply_transforms
 
 logger = logging.getLogger('ZP.' + __name__)
 logger.addHandler(logstream)
@@ -97,7 +102,15 @@ def extract_subset(dsmeta: dict, var: str, dimensions: dict, coords: list, coord
 
         dslice[d] = slice(dmin, dmax)
 
-    return ds[var].isel(**dslice), dslice
+    # All selected transforms applied in correct order.
+    ds_transformed = apply_transforms(
+        ds,
+        common_transforms=None,
+        variable_transforms=None,
+        region_transform=dslice
+    )
+
+    return ds_transformed, dslice
 
 def map_region(dimensions: dict):
     coord_extent = [int((v['source_max']-v['source_min'])/v['worker_size']) for v in dimensions.values()]
