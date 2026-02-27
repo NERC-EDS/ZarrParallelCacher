@@ -1,6 +1,6 @@
 __author__    = "Daniel Westwood"
 __contact__   = "daniel.westwood@stfc.ac.uk"
-__copyright__ = "Copyright 2024 United Kingdom Research and Innovation"
+__copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
 
 import logging
 
@@ -28,3 +28,9 @@ def set_verbose(level: int):
         if 'ZP' in name:
             lg = logging.getLogger(name)
             lg.setLevel(levels[level])
+
+try:
+    from frame_fm.transforms import transform_mapping
+    TRANSFORM_MAPPING = transform_mapping
+except ImportError:
+    TRANSFORM_MAPPING = {}
