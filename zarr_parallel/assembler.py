@@ -1,3 +1,7 @@
+__author__    = "Daniel Westwood"
+__contact__   = "daniel.westwood@stfc.ac.uk"
+__copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
+
 # Replaces the cache_data_to_zarr function with the below code
 import logging
 import math
@@ -9,43 +13,14 @@ import numpy as np
 import xarray as xr
 import yaml
 
-from zarr_parallel.utils import logstream
-from dask.distributed import Client, LocalCluster, get_worker, WorkerPlugin
+from zarr_parallel.utils import logstream, TRANSFORM_MAPPING
+from zarr_parallel.dask_worker import configure_dask_deployment
+from zarr_parallel.slurm import configure_slurm_deployment
+from zarr_parallel.transforms import apply_transforms
 
 logger = logging.getLogger('ZP.' + __name__)
 logger.addHandler(logstream)
 logger.propagate = False
-
-# from .utils import SLURM_CONFIG
-SLURM_CONFIG = """#!/bin/bash
-#SBATCH --partition=standard
-#SBATCH --account=cedaproc
-#SBATCH --qos=standard
-#SBATCH --job-name=EDS_AI_CACHE_JAS
-#SBATCH --time=
-#SBATCH --mem=
-#SBATCH -o %A_%a.out
-#SBATCH -e %A_%a.err
-""".split('\n')
-
-class IDPlugin(WorkerPlugin):
-    def setup(self, worker):
-        worker.my_id = worker.id
-
-def setup(dask_worker):
-    from dask.distributed import Worker
-    assert isinstance(dask_worker, Worker)
-
-def process_job(job_id):
-    dask_worker = get_worker()
-    print(f'Worker {dask_worker.id} processing job {job_id}')
-    return True
-
-def get_id(dask_worker):
-    return dask_worker.id
-
-def set_jobs(dask_worker, job_list):
-    dask_worker.my_jobs = job_list
 
 def divide_workers(workers, dim_bins, dims):
 
@@ -105,35 +80,17 @@ class ZarrParallelAssembler:
 
         ds.close()
 
-    def zarr_store(self, cache_dir: str) -> str:
-        return f'{cache_dir}/{self.uri.split("/")[-1].split(".")[0]}.zarr'
+    def zarr_store(self) -> str:
+        return f'{self.uri.split("/")[-1].split(".")[0]}_{"_".join(self.variables.keys())}.zarr'
+    
+    def zarr_store_path(self, cache_dir: str) -> str:
+        return f'{cache_dir}/{self.zarr_store()}'
 
     def _obtain_ds(self) -> xr.Dataset:
         """
         Obtain the xarray dataset source object for the parent dataset
         """
         return xr.open_dataset(self.uri, engine=self.engine, chunks='auto')
-    
-    def _apply_transforms(self) -> list[xr.DataArray]:
-        """
-        Apply pre-transforms from the selector to the dataset
-        """
-
-        ds = self._obtain_ds()
-        for transform in self.transforms:
-            transform_type = transform.pop('type')
-            ds = getattr(ds, transform_type)(**transform)
-
-        ds_transformed = []
-        for var, vtransforms in self.variables.items():
-            ds_var = ds[var]
-            for transform in vtransforms:
-                transform_type = transform.pop('type')
-
-                ds_var = getattr(ds_var, transform_type)(**transform)
-            ds_transformed.append(ds_var)
-
-        return ds_transformed
     
     def _determine_region_extents(self) -> dict:
         """
@@ -231,7 +188,12 @@ class ZarrParallelAssembler:
     
     def _create_empty_zarr(self, worker_config: dict, vars: list):
 
-        ds_transformed = self._apply_transforms()
+        ds_transformed = apply_transforms(
+            self._obtain_ds(),
+            common_transforms=self.transforms,
+            variable_transforms=self.variables
+        )
+        
         worker_dims = worker_config['data']['dimensions']
 
         ds_dims_only = xr.Dataset({
@@ -322,92 +284,33 @@ class ZarrParallelAssembler:
             # Add selector hash, see writer in repo.
             self._create_empty_zarr(worker_config, [v for v in self.variables.keys()])
 
-        # Output worker_config somewhere central
-
-        # Deploy
-        # - array job (SLURM) with number of workers per div
-        # - pre-transforms added to worker config
-        #.  - adjust above chunk assembly if necessary due to transforms.
-        vlabel = '_'.join(self.variables.keys())
-
-        cfg = "_".join([self.zarr_store(cache_dir),vlabel,"tmp"])
-        worker_config_file = cfg.replace('zarr_cache','zarr_cache/temp') + '.yaml'
+        worker_config_file = self.zarr_store_path(cache_dir).replace('zarr_cache','zarr_cache/temp') + '.yaml'
 
         with open(worker_config_file,'w') as f:
             yaml.dump(worker_config, f)
 
-        if deploy_mode == 'SLURM':
+        match deploy_mode:
+            case 'SLURM':
+                status = configure_slurm_deployment(
+                    cache_dir,
+                    self.zarr_store(),
+                    worker_config_file,
+                    actual_workers,
+                    simultaneous_worker_limit=simultaneous_worker_limit,
+                    worker_timeout=worker_timeout,
+                    memory_limit=memory_limit,
+                    await_completion=await_completion
+                )
+            case 'dask_distributed':
+                status = configure_dask_deployment(
+                    num_dask_workers=simultaneous_worker_limit,
+                    job_ids=num_workers,
+                    memory_limit=memory_limit,
+                    worker_config_file=worker_config_file,
+                )
 
-            slurm_config_file = f'{cache_dir}/temp/{cfg}.sbatch'
-
-            VENVPATH     = os.environ.get('VIRTUAL_ENV')
-            slurm_config = list(SLURM_CONFIG)
-
-            slurm_config[5] += worker_timeout
-            slurm_config[6] += memory_limit
-
-            #slurm_config.append(f'source {VENVPATH}/bin/activate')
-            slurm_config.append('module load jaspy')
-
-            slurm_config.append(f'python /home/users/dwest77/cedadev/AI/FRAME-FM/tests/write_region.py {worker_config_file} $SLURM_ARRAY_TASK_ID')
-
-            with open(slurm_config_file,'w') as f:
-                f.write('\n'.join(slurm_config))
-
-            # Dryrun mode logs the slurm file and command
-            os.system(f'sbatch --array=0-{actual_workers-1}%{simultaneous_worker_limit} {slurm_config_file}')
-
-            if await_completion:
-                # Needs to know location of 'out' files only.
-                #await_completion(worker_config_file)
-                raise NotImplementedError
-        
-        elif deploy_mode == 'dask_distributed':
-
-            num_dask_workers = simultaneous_worker_limit
-
-            cluster = LocalCluster(
-                n_workers=num_dask_workers,
-                threads_per_worker=1,#int(cpus),
-                memory_limit=memory_limit,
-            )
-
-            client = Client(cluster)
-            client.register_worker_callbacks(setup)
-
-            # Dask cluster - fewer nodes but can set workers to run multiple jobs.
-            num_dask_workers = simultaneous_worker_limit
-
-            jobs_per_worker = int(num_workers/simultaneous_worker_limit)
-            worker_ids = list(client.run(get_id).values())
-            job_ids = list(range(num_workers))
-
-            futures = client.scatter(job_ids, broadcast=False)
-            results = client.map(process_job, futures)
-
-            complete = False
-            while not complete:
-                msgs = 0
-                is_complete = True
-                for msg in results:
-                    if msg.result() is None:
-                        is_complete = False
-                    else:
-                        msgs += 1
-
-                complete = is_complete
-                print('Awaiting all results:', len(results)-msgs)
-
-            print("\n--- Summary ---")
-            print(f'Results: {len(results)}, Jobs: {num_workers}')
-            success, failed = 0,0
-            for msg in results:
-                if msg.result():
-                    success += 1
-                else:
-                    failed += 1
-            print(f' > Success: {success}')
-            print(f' > Failed: {failed}')
+        if not status:
+            raise ValueError
 
 if __name__ == '__main__':
     selectors= [
