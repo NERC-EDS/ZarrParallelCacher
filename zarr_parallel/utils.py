@@ -28,9 +28,3 @@ def set_verbose(level: int):
         if 'ZP' in name:
             lg = logging.getLogger(name)
             lg.setLevel(levels[level])
-
-try:
-    from frame_fm.transforms import transform_mapping
-    TRANSFORM_MAPPING = transform_mapping
-except ImportError:
-    TRANSFORM_MAPPING = {}
