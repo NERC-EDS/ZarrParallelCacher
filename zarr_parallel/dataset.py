@@ -1,3 +1,7 @@
+__author__    = "Daniel Westwood"
+__contact__   = "daniel.westwood@stfc.ac.uk"
+__copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
+
 from typing import Union, Callable
 import xarray as xr
 
