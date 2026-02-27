@@ -30,6 +30,7 @@ if __name__ == '__main__':
     ds = xr.open_dataset('https://gws-access.jasmin.ac.uk/public/eds_ai/era5_repack/aggregations/data/ecmwf-era5X_oper_an_sfc_2000_2020_2d_repack.kr1.0.json', chunks='auto')
 
     # Breaks this node if there is no protection for downloading too much data.
-    ds2 = ds['d2m'].isel(time=slice(15000,20000))
+    ds2 = ds['d2m'].isel(time=slice(0,25000))
     print(ds2)
+    x=input()
     print(ds2.mean().compute())
