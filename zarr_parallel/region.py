@@ -7,7 +7,7 @@ import math
 import sys
 
 import xarray as xr
-import yaml
+import json
 
 from zarr_parallel.utils import logstream
 from zarr_parallel.transforms import apply_transforms
@@ -25,6 +25,8 @@ mem_per_node = os.environ.get("SLURM_MEM_PER_NODE")
 mem_per_cpu = os.environ.get("SLURM_MEM_PER_CPU")
 cpus = os.environ.get("SLURM_CPUS_PER_TASK", "1")
 
+task_id = os.environ.get("SLURM_ARRAY_TASK_ID",None)
+
 if mem_per_node:
     memory_limit = f"{int(mem_per_node)}MB"
 elif mem_per_cpu and cpus:
@@ -32,13 +34,14 @@ elif mem_per_cpu and cpus:
 else:
     memory_limit = "auto"  # fallback
 
-cluster = LocalCluster(
-    n_workers=1,
-    threads_per_worker=int(cpus),
-    memory_limit=memory_limit,
-)
+if task_id is not None:
+    cluster = LocalCluster(
+        n_workers=1,
+        threads_per_worker=int(cpus),
+        memory_limit=memory_limit,
+    )
 
-client = Client(cluster)
+    client = Client(cluster)
 
 # Takes a YAML config file as input that looks like this
 
@@ -59,155 +62,187 @@ client = Client(cluster)
 #   the size of the region space in that dimension (e.g 10x2x2 -> 40 workers/regions)
 # - this script is given a task ID which is translated to a position in the region space.
 
-def id_to_coord(id: int, coord_space: list):
+class RegionWorker:
+    def __init__(self, id: str, config: str):
 
-    if id > math.prod(coord_space)-1:
-        raise ValueError(f'ID {id} invalid for space with {math.prod(coord_space)} tiles')
+        with open(config) as f:
+            content = json.load(f)
 
-    coords = []
-    for dim in range(len(coord_space)):
-        coord = 0
+        self.id = int(id)
+        self.dsinfo      = content['dataset']
+        self.transforms  = content['common']['pre_transforms']
+        self.variables   = content['variables']
+        self.region_info = content['region_info']
 
-        # Calculate stride product
-        strideprod = 1
-        for stride in coord_space[dim+1:]:
-            strideprod *= stride
-        coord += math.floor(id/strideprod) % coord_space[dim]
+        self.dimensions = list(self.region_info.keys())
 
-        coords.append(int(coord))
-    return coords
+        # Determine coordinate/region extents
+        self.coord_extent, self.region_extent   = self.map_region()
 
-def extract_subset(dsmeta: dict, var: str, dimensions: dict, coords: list, coord_space: list) -> xr.DataArray:
-    """
-    Open a remote dataset and extract an xarray DataArray
-    """
+        # Determine my coordinates
+        self.coords = self.id_to_coord()
 
-    ds = xr.open_dataset(
-        dsmeta['uri'],
-        engine=dsmeta['engine'],
-        **dsmeta['kwargs']
-    )
+        # Determine my region
+        self.region = self.region_from_coords()
 
-    dslice = {}
-    dcount = 0
-    for d, v in dimensions.items():
-        dmin = v['source_min'] - v['worker_offset']
-        dmax = v['source_max'] - v['worker_offset']
+        self.dslice = self.resolve_region()
+
+        self._prepare_dataset()
+
+    def map_region(self):
+        coord_extent = [int((v['source_max']-v['source_min'])/v['worker_size']) for v in self.region_info.values()]
+        region_extent = [int(v['source_max']-v['source_min']) for v in self.region_info.values()]
+
+        return coord_extent, region_extent
+
+    def id_to_coord(self):
+
+        if self.id > math.prod(self.coord_extent)-1:
+            raise ValueError(f'ID {self.id} invalid for space with {math.prod(self.coord_extent)} tiles')
+
+        coords = []
+        for dim in range(len(self.coord_extent)):
+            coord = 0
+
+            # Calculate stride product
+            strideprod = 1
+            for stride in self.coord_extent[dim+1:]:
+                strideprod *= stride
+            coord += math.floor(self.id/strideprod) % self.coord_extent[dim]
+
+            coords.append(int(coord))
+        return coords
+    
+    def region_from_coords(self):
+
+        region = {}
+        for i in range(len(self.dimensions)):
+            rmin = int(self.region_extent[i]/self.coord_extent[i])*self.coords[i]
+            rmax = int(self.region_extent[i]/self.coord_extent[i])*(self.coords[i]+1)
+
+            if self.coords[i] == self.coord_extent[i]-1:
+                rmax = self.region_extent[i]
+            region[self.dimensions[i]] = slice(rmin,rmax)
+
+        return region
+    
+    def write_data_region(self):
+
+        # Open config file as dict
         
-        # Offset is ignored if we are at the boundaries
-        if coords[dcount] == 0:
-            dmin = v['source_min']
-        if coords[dcount] == coord_space[dcount]-1:
-            dmax = v['source_max']
+        # Determine coordinates of region
+        # Map to slice of total dataset
+        # Extract selection 
 
-        dslice[d] = slice(dmin, dmax)
+        # Determine current region
 
-    # All selected transforms applied in correct order.
-    ds_transformed = apply_transforms(
-        ds,
-        common_transforms=None,
-        variable_transforms=None,
-        region_transform=dslice
-    )
+        chunks = {d: min(v['cache_size'],v['worker_size']) for d, v in self.region_info.items()}
 
-    return ds_transformed, dslice
+        # Replace with logging
+        logger.info(f'ID: {self.id}')
+        logger.info(f'Coords: {self.coords}')
+        logger.info(f'Chunks: {chunks}')
 
-def map_region(dimensions: dict):
-    coord_extent = [int((v['source_max']-v['source_min'])/v['worker_size']) for v in dimensions.values()]
-    region_extent = [int(v['source_max']-v['source_min']) for v in dimensions.values()]
+        for var, vinfo in self.variables.items():
 
-    return coord_extent, region_extent
 
-def region_from_coords(coords: list, coord_extent: list, dims: list, region_extent: list):
+            darr = self.extract_subset({var:vinfo})
 
-    region = {}
-    for i in range(len(dims)):
-        rmin = int(region_extent[i]/coord_extent[i])*coords[i]
-        rmax = int(region_extent[i]/coord_extent[i])*(coords[i]+1)
+            # Watch for memory limits.
+            darr = darr.load()
 
-        if coords[i] == coord_extent[i]-1:
-            rmax = region_extent[i]
-        region[dims[i]] = slice(rmin,rmax)
+            logger.info(f"Writing {var} Region: ")
+            for d, v in self.dslice.items():
+                print(f'{d} {v} -> {self.region[d]}')
 
-    return region
+            darr.encoding.pop('chunks')
+            darr.chunk(chunks)
 
-# python write_region.py config.yaml $ID
+            print(darr)
 
-def write_data_region(id: str, dataset: dict, data: dict):
+            # Write the specific region to the zarr cache
+            darr.to_zarr(
+                self.dsinfo['zarr_cache'], 
+                zarr_format=2, 
+                compute=True, 
+                consolidated=True,
+                region=self.region,
+                write_empty_chunks=True,
+                mode='r+')
 
-    # Open config file as dict
-    
-    # Determine coordinates of region
-    # Map to slice of total dataset
-    # Extract selection 
+            # logger.info(f"Writing {var} Region: ")
+            # for d, v in self.dslice.items():
+            #     print(f'{d} {v} -> {self.region[d]}')
 
-    dims          = list(data['dimensions'].keys())
+            # # Force rechunk here to bypass dask existing chunks
+            # darr_out = xr.Dataset({
+            #     d: darr[d].to_numpy()
+            #     for d in darr.dims})
 
-    # Map the region to obtain extents
-    coord_extent, region_extent   = map_region(data['dimensions'])
+            # var = darr.name
+            # darr_out[var] = xr.DataArray(darr.to_numpy(), dims=darr.dims)
+            # darr_out[var].attrs = darr.attrs
 
-    # Determine current coordinates
-    coords        = id_to_coord(int(id), coord_extent)
+            # darr_out.chunk(chunks)
 
-    # Determine current region
-    region = region_from_coords(coords, coord_extent, dims, region_extent)
+            # # Write the specific region to the zarr cache
+            # darr_out.to_zarr(
+            #     self.dsinfo['zarr_cache'], 
+            #     zarr_format=2, 
+            #     compute=True, 
+            #     consolidated=True,
+            #     region=self.region,
+            #     write_empty_chunks=True,
+            #     mode='r+')
+        
+        logger.info(f'Complete for {self.coords}')
 
-    chunks = {d: v['cache_size'] for d, v in data['dimensions'].items()}
+    def _prepare_dataset(self):
 
-    # Replace with logging
-    logger.info(f'ID: {id}')
-    logger.info(f'Coords: {coords}')
-    logger.info(f'Chunks: {chunks}')
+        self.ds = xr.open_dataset(
+            self.dsinfo['uri'],
+            engine=self.dsinfo['engine'],
+            chunks={},
+            **self.dsinfo.get('kwargs',{})
+        )
 
-    darr, dslice = extract_subset(
-        dataset,
-        var=data['variable'],
-        dimensions=data['dimensions'],
-        coords=coords,
-        coord_space=coord_extent
-    )
+    def resolve_region(self) -> dict[slice]:
+        
+        dslice = {}
+        dcount = 0
+        for d, v in self.region_info.items():
+            dmin = v['source_min'] - v['worker_offset']
+            dmax = dmin + v['worker_size']
+            
+            # Offset is ignored if we are at the boundaries
+            if self.coords[dcount] == 0:
+                dmin = v['source_min']
+            if self.coords[dcount] == self.coord_extent[dcount]-1:
+                dmax = v['source_max']
 
-    # Watch for memory limits.
-    darr = darr.load()
+            dslice[d] = slice(dmin, dmax)
+            dcount += 1
 
-    logger.info(f"Writing {data['variable']} Region: ")
-    for d, v in dslice.items():
-        print(f'{d} {v} -> {region[d]}')
+        return dslice
 
-    darr.encoding.pop('chunks')
-    darr.chunk(chunks)
-    
-    # Slice array based on our coordinate region
-    darr = darr.isel(**region).compute()
+    def extract_subset(self, vtransform: dict) -> xr.DataArray:
+        """
+        Open a remote dataset and extract an xarray DataArray
+        """
 
-    # Write the specific region to the zarr cache
-    darr.to_zarr(
-        dataset['zarr_cache'], 
-        zarr_format=2, 
-        compute=True, 
-        consolidated=True,
-        region=region,
-        write_empty_chunks=True,
-        mode='r+')
-    
-    logger.info(f'Complete for {coords}')
+        # All selected transforms applied in correct order.
+        ds_transformed, _ = apply_transforms(
+            self.ds,
+            common_transforms=self.transforms,
+            variable_transforms=vtransform,
+            region_transform=self.dslice
+        )
+        return ds_transformed
 
-def write_region_from_config(id: str, config_file: str):
-    """
-    Write region from config file.
-    
-    Different variables will have different regional configurations
-    so are handled differently. See the top of this file for an example
-    config file to run the region writer script.
-    """
-
-    with open(config_file) as stream:
-        content = yaml.safe_load(stream)
-
-    write_data_region(id, content['dataset'], content['data'])
 
 if __name__ == '__main__':
     id = sys.argv[-1]
     config = sys.argv[-2]
 
-    write_region_from_config(id, config)
+    rw = RegionWorker(id, config)
+    rw.write_data_region()
