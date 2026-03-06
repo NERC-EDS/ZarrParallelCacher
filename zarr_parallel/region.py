@@ -90,7 +90,7 @@ class RegionWorker:
         self._prepare_dataset()
 
     def map_region(self):
-        coord_extent = [int((v['source_max']-v['source_min'])/v['worker_size']) for v in self.region_info.values()]
+        coord_extent = [math.ceil((v['source_max']-v['source_min'])/v['worker_size']) for v in self.region_info.values()]
         region_extent = [int(v['source_max']-v['source_min']) for v in self.region_info.values()]
 
         return coord_extent, region_extent
@@ -117,12 +117,14 @@ class RegionWorker:
 
         region = {}
         for i in range(len(self.dimensions)):
-            rmin = int(self.region_extent[i]/self.coord_extent[i])*self.coords[i]
-            rmax = int(self.region_extent[i]/self.coord_extent[i])*(self.coords[i]+1)
+            dim = self.dimensions[i]
+
+            rmin = self.region_info[dim]['worker_size']*self.coords[i]
+            rmax = self.region_info[dim]['worker_size']*(self.coords[i]+1)
 
             if self.coords[i] == self.coord_extent[i]-1:
                 rmax = self.region_extent[i]
-            region[self.dimensions[i]] = slice(rmin,rmax)
+            region[dim] = slice(rmin,rmax)
 
         return region
     
@@ -143,22 +145,20 @@ class RegionWorker:
         logger.info(f'Coords: {self.coords}')
         logger.info(f'Chunks: {chunks}')
 
-        for var, vinfo in self.variables.items():
+        darrs = self.extract_subset()
+        for darr in darrs:
 
-
-            darr = self.extract_subset({var:vinfo})
+            var = darr.name
 
             # Watch for memory limits.
             darr = darr.load()
 
             logger.info(f"Writing {var} Region: ")
             for d, v in self.dslice.items():
-                print(f'{d} {v} -> {self.region[d]}')
+                logger.info(f'{d} {v} -> {self.region[d]}')
 
             darr.encoding.pop('chunks')
             darr.chunk(chunks)
-
-            print(darr)
 
             # Write the specific region to the zarr cache
             darr.to_zarr(
@@ -169,31 +169,6 @@ class RegionWorker:
                 region=self.region,
                 write_empty_chunks=True,
                 mode='r+')
-
-            # logger.info(f"Writing {var} Region: ")
-            # for d, v in self.dslice.items():
-            #     print(f'{d} {v} -> {self.region[d]}')
-
-            # # Force rechunk here to bypass dask existing chunks
-            # darr_out = xr.Dataset({
-            #     d: darr[d].to_numpy()
-            #     for d in darr.dims})
-
-            # var = darr.name
-            # darr_out[var] = xr.DataArray(darr.to_numpy(), dims=darr.dims)
-            # darr_out[var].attrs = darr.attrs
-
-            # darr_out.chunk(chunks)
-
-            # # Write the specific region to the zarr cache
-            # darr_out.to_zarr(
-            #     self.dsinfo['zarr_cache'], 
-            #     zarr_format=2, 
-            #     compute=True, 
-            #     consolidated=True,
-            #     region=self.region,
-            #     write_empty_chunks=True,
-            #     mode='r+')
         
         logger.info(f'Complete for {self.coords}')
 
@@ -207,16 +182,20 @@ class RegionWorker:
         )
 
     def resolve_region(self) -> dict[slice]:
+        """
+        Resolve region to determine slice to subset
+        
+        Currently superfluous as the region is equal to the slice,
+        but if the improvement to directly slice from source is made,
+        this function becomes useful again."""
         
         dslice = {}
         dcount = 0
         for d, v in self.region_info.items():
-            dmin = v['source_min'] - v['worker_offset']
+            dmin = v['source_min'] + self.coords[dcount]*v['worker_size']
             dmax = dmin + v['worker_size']
             
-            # Offset is ignored if we are at the boundaries
-            if self.coords[dcount] == 0:
-                dmin = v['source_min']
+            # Adjust to fit boundary in the case of smaller final chunk
             if self.coords[dcount] == self.coord_extent[dcount]-1:
                 dmax = v['source_max']
 
@@ -225,19 +204,19 @@ class RegionWorker:
 
         return dslice
 
-    def extract_subset(self, vtransform: dict) -> xr.DataArray:
+    def extract_subset(self) -> xr.DataArray:
         """
         Open a remote dataset and extract an xarray DataArray
         """
 
         # All selected transforms applied in correct order.
-        ds_transformed, _ = apply_transforms(
+        transformed = apply_transforms(
             self.ds,
             common_transforms=self.transforms,
-            variable_transforms=vtransform,
+            variable_transforms=self.variables,
             region_transform=self.dslice
         )
-        return ds_transformed
+        return transformed['datasets']
 
 
 if __name__ == '__main__':
@@ -246,3 +225,8 @@ if __name__ == '__main__':
 
     rw = RegionWorker(id, config)
     rw.write_data_region()
+
+    import psutil, os
+
+    process = psutil.Process(os.getpid())
+    print("Memory used (RSS):", process.memory_info().rss, "bytes")

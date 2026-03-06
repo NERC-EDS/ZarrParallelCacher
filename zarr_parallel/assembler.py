@@ -9,11 +9,12 @@ import os
 from typing import Union
 
 import dask.array as da
+import dask
 import numpy as np
 import xarray as xr
 import json
 
-from zarr_parallel.utils import logstream
+from zarr_parallel.utils import logstream, set_verbose
 from zarr_parallel.dask_worker import configure_dask_deployment
 from zarr_parallel.slurm import configure_slurm_deployment
 from zarr_parallel.transforms import apply_transforms
@@ -21,6 +22,12 @@ from zarr_parallel.transforms import apply_transforms
 logger = logging.getLogger('ZP.' + __name__)
 logger.addHandler(logstream)
 logger.propagate = False
+
+dask.config.set({
+    "distributed.scheduler.worker-ttl": "120s",
+    "distributed.comm.timeouts.connect": "60s",
+    "distributed.comm.timeouts.tcp": "60s",
+})
 
 def divide_workers(workers, weights, dims):
 
@@ -50,8 +57,6 @@ class ZarrParallelAssembler:
                 self.dimensions    = dict(transform)
                 self.dimensions.pop('type')
 
-        #self.offsets, self.reverses = self._determine_worker_offsets()
-
         if self.dimensions is None:
             raise ValueError('No selection criteria applied')
         self.output_chunks = selector['common'].get('chunks')
@@ -60,7 +65,6 @@ class ZarrParallelAssembler:
 
         # Derived properties
         self._ds = None
-        self.offsets = None
 
         ds = self._native_ds()
         logger.info(f'Established connection to {self.uri}')
@@ -106,20 +110,81 @@ class ZarrParallelAssembler:
         variables = copy.deepcopy(self.variables)
 
         if self._ds is None:
-            self._ds, self.offsets = apply_transforms(
+            transformed = apply_transforms(
                 self._native_ds(chunks=chunks),
                 common_transforms=transforms,
                 variable_transforms=variables,
-                reverses=self._determine_worker_reverses()
+                recommend_changes=True
             )
+            self._ds = transformed['datasets']
+            self.offsets = transformed['offsets']
+            self.array_ends = transformed['ends']
 
         return self._ds
+    
+    def _determine_num_jobs(self, memory_limit: str) -> int:
+        """
+        Determine the number of jobs given the memory limit
 
-    def _determine_worker_reverses(self):
+        Divide the total array dimensions by this value to get the total 
         """
-        Determine which dimensions have reversed worker offsets
-        """
-        return [transform['dim'] for transform in self.transforms if transform['type'] == 'reverse_axis']
+
+        mem_units = ['B','KB','MB','GB','TB','PB']
+        bibi_units = ['z','KIB','MIB','GIB','TIB','PIB']
+
+        suffix = memory_limit[-2:]
+        if suffix[0].isnumeric():
+            suffix = suffix[-1]
+
+        mem = float(memory_limit.replace(suffix,''))
+        if suffix in mem_units:
+            mem*=(1000**mem_units.index(suffix.upper()))
+        elif suffix in bibi_units:
+            mem*=(1024**mem_units.index(suffix.upper()))
+        else:
+            raise ValueError(
+                f'Memory Limit format unrecognised: {memory_limit} - '
+                'Suffix should conform to e.g MB/GiB'
+            )
+        
+        mem = mem/16
+        
+        # Increase number of minimal_arrays by 1 until memory limit is reached
+        # total_array / (minimal_array*n_arrays) gives the optimal number of workers
+        self._obtain_ds()
+        
+        min_arr, total_arr = [],[]
+        for dim in self.dimensions.keys():
+            minimal = 0
+            total = 0
+            source_chunk = self.source_chunks[dim]
+            output_chunk = self.output_chunks.get(dim,source_chunk)
+
+            min_region = math.lcm(int(output_chunk), int(source_chunk))
+            position = 0
+            beyond = False
+            while not beyond:
+                if position + source_chunk > self.offsets[dim] and position < self.array_ends[dim]:
+                    total += source_chunk
+                if position < min_region:
+                    minimal += source_chunk
+                if position - source_chunk > self.array_ends[dim]:
+                    beyond = True
+                position += source_chunk
+            min_arr.append(minimal)
+            total_arr.append(total)
+            
+        # Compare minimum region size with total selection size to find num jobs
+        min_size = math.prod(min_arr)
+        tot_size = math.prod(total_arr)
+
+        regions_per_job = math.floor(mem/min_size)
+
+        njobs = math.ceil(tot_size/(min_size*regions_per_job))
+
+        logger.info(f'Dividing into {njobs} jobs for job memory limit {memory_limit}')
+
+        return njobs
 
     def _determine_region_extents(self) -> dict:
         """
@@ -134,10 +199,10 @@ class ZarrParallelAssembler:
 
         # Determine region extents
         for dim, dinf in self.dimensions.items():
-            dim_arr = ds[dim].to_numpy()
+            dim_arr = ds[0][dim].to_numpy()
 
-            region_min = 0
-            region_max = len(dim_arr)
+            region_min = 0 + self.offsets[dim] # Offset to start of slice
+            region_max = len(dim_arr) + self.offsets[dim]
 
             total_region = int(region_max) - int(region_min)
             dim_spec[dim] = {
@@ -183,43 +248,49 @@ class ZarrParallelAssembler:
                 min_region = total_region
 
             # Regions per worker - will resolve to 1 if min_region == total_region
-            rpw = max(math.floor(total_region/(min_region*num_workers_per_dim[dim])),1)
+            rpw = max(math.ceil(total_region/(min_region*num_workers_per_dim[dim])),1)
+            # RPW rounded UP so the actual workers is always LOWER than requested
 
             # Region_size (per worker)
             worker_size = int(rpw * min_region)
-
-            chunk_sum = 0
-            while chunk_sum <= region_min:
-                chunk_sum += int(source_chunks)
-            chunk_sum -= int(source_chunks)
-
-            # Difference between chunk border and region selected
-            worker_offset = self.offsets[dim]
 
             # To go into the config file for the individual workers
             dim_spec[dim] = {
                 'source_min': int(region_min),
                 'source_max': int(region_max),
                 'worker_size': worker_size,
-                'worker_offset': worker_offset, # Negative value
                 'cache_size': int(output_chunks),
                 'total_region': total_region
             }
 
-            actual_workers *= int(total_region/worker_size)
+            actual_workers *= math.ceil(total_region/worker_size)
 
         return dim_spec, actual_workers
     
-    def _create_empty_zarr(self, worker_config: dict, vars: list, return_ds: bool = False):
+    def _determine_regional_transforms(self) -> list:
+        """
+        Output transforms to each region, with selection modifications.
+        """
+        regional_transforms = []
+        for transform in self.transforms:
+            if transform['type'] in ['sel','isel']:
+                regional_transforms.append({'type':'region_isel'})
+            else:
+                regional_transforms.append(transform)
+        return regional_transforms
 
+
+    def _create_empty_zarr(self, worker_config: dict):
+        """
+        Create empty zarr based on the first of the variable dataArrays.
+        """
+        
         ds_transformed = self._obtain_ds()
         
         worker_dims = worker_config['region_info']
 
         ds_dims_only = xr.Dataset({
-            d: ds_transformed[d].isel(**{
-                d: slice(v['source_min'],v['source_max']) 
-            }) for d, v in worker_dims.items()
+            d: ds_transformed[0][d] for d in worker_dims.keys()
         })
         
         # Copy global attributes
@@ -234,7 +305,7 @@ class ZarrParallelAssembler:
 
         # Add encoding per dimension (compressors, filters etc.)
 
-        chunks = {d: int(v['total_region']/v['cache_size']) for d, v in worker_dims.items()}
+        chunks = {d: min(v['cache_size'],v['worker_size']) for d, v in worker_dims.items()}
 
         logger.info(f'Rechunking: {chunks}')
         ds_dims_only.chunk(chunks)
@@ -242,15 +313,16 @@ class ZarrParallelAssembler:
         empty_shape = [v['total_region'] for v in worker_dims.values()]
         empty_var = da.empty(empty_shape, chunks=chunks)
 
-        var = ds_transformed.name
-        ds_dims_only[var] = xr.DataArray(empty_var, dims=list(worker_dims.keys()))
-        ds_dims_only[var].attrs = ds_transformed.attrs
+        encoding = {}
+        for dsv in ds_transformed:
+            logger.info(f'Writing empty DataArray: {dsv}')
+            var = dsv.name
+            ds_dims_only[var] = xr.DataArray(empty_var, dims=list(worker_dims.keys()))
+            ds_dims_only[var].attrs = dsv.attrs
 
-        # Force Zarr to use Dask chunk structure
-        # Preserve non-chunk encoding attributes
-        encoding = {
-            var: {'chunks': [v['cache_size'] for d, v in worker_dims.items()]}
-        }
+            # Force Zarr to use Dask chunk structure
+            # Preserve non-chunk encoding attributes
+            encoding[var] = {'chunks': [v['cache_size'] for d, v in worker_dims.items()]}
 
         ds_dims_only.to_zarr(
             worker_config['dataset']['zarr_cache'], 
@@ -260,9 +332,6 @@ class ZarrParallelAssembler:
             encoding=encoding
         )
         logger.info(f'Empty zarr store created at {worker_config["dataset"]["zarr_cache"]}')
-
-        if return_ds:
-            return ds_transformed
 
     def _arrange_region_selector(
             self, 
@@ -276,15 +345,15 @@ class ZarrParallelAssembler:
                 'kwargs':{},
                 'zarr_cache': self.zarr_store_path(cache_dir)
             },
-            'common':{'pre_transforms': self.transforms + [{'type':'region_isel'}]},
+            'common':{'pre_transforms': self._determine_regional_transforms()},
             'variables': self.variables,
             'region_info': dim_spec
         }
 
     def cache(
             self,
-            num_workers: int, # Number of workers per zarr store
             cache_dir: Union[str,object], # Can be zarr store or Pathlike?
+            num_jobs: Union[int,None] = None, # Number of workers per zarr store
             generate_stats: bool = False,
             deploy_mode: str = 'SLURM',
             await_completion: bool = True,
@@ -298,6 +367,9 @@ class ZarrParallelAssembler:
         Will send out parallel workers and has option to wait for completion.
         """
 
+        if num_jobs is None:
+            num_jobs = self._determine_num_jobs(memory_limit)
+
         if os.path.isdir(self.zarr_store_path(cache_dir)):
             os.system(f'rm -rf {self.zarr_store_path(cache_dir)}')
         if not os.path.isdir(f'{cache_dir}/temp'):
@@ -305,9 +377,9 @@ class ZarrParallelAssembler:
 
         dim_spec = self._determine_region_extents()
 
-        dim_spec, actual_workers = self._determine_worker_arrangements(dim_spec, num_workers)
+        dim_spec, actual_workers = self._determine_worker_arrangements(dim_spec, num_jobs)
 
-        logger.info(f'Requested workers: {num_workers}')
+        logger.info(f'Requested workers: {num_jobs}')
         logger.info(f'Actual workers: {actual_workers} (Chunk limitations)')
 
         worker_config = self._arrange_region_selector(cache_dir, dim_spec)
@@ -322,7 +394,7 @@ class ZarrParallelAssembler:
         match deploy_mode:
             case 'SLURM':
 
-                self._create_empty_zarr(worker_config, [v for v in self.variables.keys()])
+                self._create_empty_zarr(worker_config)
 
                 status = configure_slurm_deployment(
                     cache_dir,
@@ -337,30 +409,32 @@ class ZarrParallelAssembler:
                 )
             case 'dask_distributed':
 
-                # Attempting to use in-built dask-cluster parallelisation
+                self._create_empty_zarr(worker_config)
+                
+                # Cluster workers set via limit
+                # Number of jobs is now number of traditional workers
                 status = configure_dask_deployment(
-                    ds=self._obtain_ds(chunks={}),
-                    zarr_path=self.zarr_store_path(cache_dir),
                     num_dask_workers=simultaneous_worker_limit,
-                    #job_ids=num_workers,
-                    #worker_config=worker_config,
+                    job_ids=actual_workers,
+                    worker_config_file=worker_config_file,
                     memory_limit=memory_limit,
-                    chunks=chunks
+                    threads_per_worker=1
                 )
 
             case 'series':
                 # Serial cacher for very small datasets.
                 ds_transformed = self._obtain_ds()
+                for ds in ds_transformed:
 
-                ds_transformed.chunk(chunks)
+                    ds.chunk(chunks)
 
-                ds_transformed.to_zarr(
-                    self.zarr_store_path(cache_dir), 
-                    compute=True,
-                    zarr_format=2, 
-                    consolidated=True,
-                    write_empty_chunks=True,
-                    mode='w')
+                    ds.to_zarr(
+                        self.zarr_store_path(cache_dir), 
+                        compute=True,
+                        zarr_format=2, 
+                        consolidated=True,
+                        write_empty_chunks=True,
+                        mode='w')
                 
                 status = True
 
@@ -375,7 +449,7 @@ if __name__ == '__main__':
                     "pre_transforms": [
                         {"type": "reverse_axis", "dim": "latitude"},
                         #{"type": "roll", "dim": "longitude", "shifts": None}, # Roll required BEFORE subsetting
-                        {"type": "sel", "time": ["2000-03-02 00:00:00", "2010-01-10 23:00:00"], "latitude": [60, 67.8], "longitude": [10, 137.8]},
+                        {"type": "sel", "time": ["2000-03-02 00:00:00", "2005-01-10 23:00:00"], "latitude": [60, 67.8], "longitude": [10, 137.8]},
                         # xarray-based transformations SHOULDN'T affect the region arrangements.
                     ],
                     "pre_transform_rule": "append",  # or "override" to replace common pre-transforms with variable-specific ones
@@ -408,5 +482,8 @@ if __name__ == '__main__':
                 }
             }]
     
-    zp = ZarrParallelAssembler(selector=selectors[0], cache_label='v2')
-    zp.cache(num_workers=50,cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache',deploy_mode='dask_distributed',simultaneous_worker_limit=4)
+    set_verbose(1)
+    os.environ['ZP_LOG_LEVEL'] = '1'
+    
+    zp = ZarrParallelAssembler(selector=selectors[0], cache_label='v4')
+    zp.cache(cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache',deploy_mode='dask_distributed',simultaneous_worker_limit=8)

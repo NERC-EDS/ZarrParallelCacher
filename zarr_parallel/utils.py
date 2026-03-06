@@ -28,3 +28,5 @@ def set_verbose(level: int):
         if 'ZP' in name:
             lg = logging.getLogger(name)
             lg.setLevel(levels[level])
+            # Test
+            lg.info('Initialised')
