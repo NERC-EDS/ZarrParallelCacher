@@ -441,6 +441,80 @@ class ZarrParallelAssembler:
         if not status:
             raise ValueError
 
+
+class ZarrParallelAssemblerFRAMEFM(ZarrParallelAssembler):
+    """
+    Subclass of ZarrParallelAssembler to integrate with FRAME-FM Datasets.
+
+    Rather than reading in selectors and data URIs, this takes a single Xarray Dataset as input,
+    that has already been transformed according to the needs of the user. The assembler then 
+    determines the optimal chunking strategy and parallelisation approach to cache this dataset 
+    to Zarr, using the same underlying logic as the parent class.
+    """
+
+    def __init__(self, ds: xr.Dataset, cache_label: str):
+        self.ds = ds
+        self.uri = ds.encoding.get('source','unknown_source')
+        logger.info(f'Initializing ZarrParallelAssemblerFRAMEFM with dataset from {self.uri}')
+        self.engine = "kerchunk" # Discuss an option for this?
+        self.variables = {var: {} for var in ds.data_vars}
+        self.transforms = []
+        self.dimensions = {dim: None for dim in ds.dims}
+        self.output_chunks = {dim: ds[var].chunks[dx][0] for var in ds.data_vars for dx, dim in enumerate(ds[var].dims)}
+        self.cache_label = cache_label or ""
+
+        # Derived properties
+        self._ds = None
+
+        # ds = self._native_ds()
+
+        logger.info(f'Established connection to {self.uri}')
+
+        # Derive source chunks and determine which are sub-chunked
+        self.source_chunks = {}
+        self.chunked_dims = {}
+        for var in self.variables.keys():
+            # Currently ignores different chunk structures between variables
+            # Assumes chunk structures are the same for all variables in this selector.
+
+            self.source_chunks = {}
+            self.chunked_dims[var] = []
+            for dx, chunkset in enumerate(ds[var].chunks):
+                dim = ds[var].dims[dx]
+                self.source_chunks[dim] = chunkset[0]
+                if len(chunkset) > 1:
+                    self.chunked_dims[var].append(dim)
+
+        chunked_dims = set([tuple(c) for c in self.chunked_dims.values()])
+        if len(chunked_dims) > 1:
+            raise ValueError('Parallel caching not supported for different structures within the same zarr store')
+        self.chunked_dims = list(chunked_dims)[0]
+
+        # If the source chunks differ between variables, raise an 
+        # error as this is not yet supported.
+
+    def _obtain_ds(self, chunks: Union[str,dict,None] = 'auto') -> xr.Dataset:
+        """
+        Obtain the xarray dataset source object for the parent dataset
+        """
+        import copy
+        transforms = copy.deepcopy(self.transforms)
+        variables = copy.deepcopy(self.variables)
+
+        if self._ds is None:
+            transformed = apply_transforms(
+                self.ds,
+                common_transforms=transforms,
+                variable_transforms=variables,
+                recommend_changes=True
+            )
+            self._ds = transformed['datasets']
+            self.offsets = transformed['offsets']
+            self.array_ends = transformed['ends']
+
+        return self._ds
+
+
 if __name__ == '__main__':
     selectors= [
             {   
@@ -484,6 +558,28 @@ if __name__ == '__main__':
     
     set_verbose(1)
     os.environ['ZP_LOG_LEVEL'] = '1'
+
+    FRAMEFM_TEST = True
     
-    zp = ZarrParallelAssembler(selector=selectors[0], cache_label='v4')
-    zp.cache(cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache',deploy_mode='dask_distributed',simultaneous_worker_limit=8)
+    if FRAMEFM_TEST:
+        logger.info('Running ZarrParallelAssemblerFRAMEFM test with ERA5GriddedTimeSeriesDataset')
+
+        from FRAME_FM.datasets.era5_dataset import ERA5GriddedTimeSeriesDataset
+        preprocessors = [
+            {"type": "reverse_axis", "dim": "latitude"},
+            {"type": "subset", "time": ("2000-03-02 00:00:00", "2005-01-10 23:00:00"), "latitude": (60, 67.8), "longitude": (10, 137.8)},
+        ]
+
+        dataset = ERA5GriddedTimeSeriesDataset(
+            data_uri="https://gws-access.jasmin.ac.uk/public/eds_ai/era5_repack/aggregations/data/ecmwf-era5X_oper_an_sfc_2000_2020_2d_repack.kr1.0.json",
+            preprocessors=preprocessors
+        )
+
+        ds = dataset.data
+        zp = ZarrParallelAssemblerFRAMEFM(ds, cache_label='v5')
+        zp.cache(cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache', deploy_mode='series', simultaneous_worker_limit=8)
+
+    else:
+        logger.info('Running ZarrParallelAssembler test with ERA5Dataset')
+        zp = ZarrParallelAssembler(selector=selectors[0], cache_label='v4')
+        zp.cache(cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache', deploy_mode='dask_distributed', simultaneous_worker_limit=8)

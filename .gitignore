@@ -1,1 +1,3 @@
 .venv/
+zarr_parralel/__pycache__
+*.pyc
