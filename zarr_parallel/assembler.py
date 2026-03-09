@@ -44,14 +44,22 @@ def divide_workers(workers, weights, dims):
 
 class ZarrParallelAssembler:
 
-    def __init__(self, selector: dict, cache_label: Union[str,None] = None):
+    def __init__(
+            self,
+            data_uri: str,
+            preprocessors: Union[list,None] = None,
+            chunks: Union[dict,None] = None,
+            cache_label: Union[str,None] = None,
+            engine: str = 'kerchunk',
+            variables: Union[list,None] = None
+        ):
 
-        # Subject to change - not based on any established scheme for selectors
-        self.uri           = selector['uri']
-        self.engine        = 'kerchunk' # Discuss an option for this?
-        self.variables     = selector['variables']
-        self.transforms    = selector['common']['pre_transforms']
+        self.uri           = data_uri
+        self.engine        = engine
+        self.variables     = variables
+        self.transforms    = preprocessors
         self.dimensions = None
+
         for transform in self.transforms:
             if transform['type'] in ['sel','isel']:
                 self.dimensions    = dict(transform)
@@ -59,7 +67,7 @@ class ZarrParallelAssembler:
 
         if self.dimensions is None:
             raise ValueError('No selection criteria applied')
-        self.output_chunks = selector['common'].get('chunks')
+        self.output_chunks = chunks
 
         self.cache_label = cache_label or ''
 
@@ -278,7 +286,6 @@ class ZarrParallelAssembler:
             else:
                 regional_transforms.append(transform)
         return regional_transforms
-
 
     def _create_empty_zarr(self, worker_config: dict):
         """
