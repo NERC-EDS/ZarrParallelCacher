@@ -43,25 +43,6 @@ if task_id is not None:
 
     client = Client(cluster)
 
-# Takes a YAML config file as input that looks like this
-
-# dataset:
-#.  uri: https://...
-#.  engine: kerchunk
-#.  kwargs...
-#.  zarr_cache: ...
-# data:
-#   variable: 'clt'
-#.  dimensions:
-#.    time:
-#.      source_slice_min/max: A to B
-#.      cache_chunk_size: 30
-#.      worker_slice_size: 300
-
-# - (A-B)/worker_slice_size gives
-#   the size of the region space in that dimension (e.g 10x2x2 -> 40 workers/regions)
-# - this script is given a task ID which is translated to a position in the region space.
-
 class RegionWorker:
     def __init__(self, id: str, config: str):
 

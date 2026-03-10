@@ -51,7 +51,8 @@ class ZarrParallelAssembler:
             chunks: Union[dict,None] = None,
             cache_label: Union[str,None] = None,
             engine: str = 'kerchunk',
-            variables: Union[list,None] = None
+            variables: Union[list,None] = None,
+            add_attrs: Union[dict,None] = None
         ):
 
         self.uri           = data_uri
@@ -59,6 +60,8 @@ class ZarrParallelAssembler:
         self.variables     = variables
         self.transforms    = preprocessors
         self.dimensions = None
+
+        self.add_attrs = add_attrs
 
         for transform in self.transforms:
             if transform['type'] in ['sel','isel']:
@@ -76,6 +79,10 @@ class ZarrParallelAssembler:
 
         ds = self._native_ds()
         logger.info(f'Established connection to {self.uri}')
+
+        if variables is None:
+            # All variables
+            self.variables = {v : {} for v in ds.variables if v not in ds.dims}
 
         # Derive source chunks and determine which are sub-chunked
         self.source_chunks = {}
@@ -100,12 +107,6 @@ class ZarrParallelAssembler:
         # If the source chunks differ between variables, raise an 
         # error as this is not yet supported.
 
-    def zarr_store(self) -> str:
-        return f'{self.uri.split("/")[-1].split(".")[0]}_{"_".join(self.variables.keys())}{self.cache_label}.zarr'
-    
-    def zarr_store_path(self, cache_dir: str) -> str:
-        return f'{cache_dir}/{self.zarr_store()}'
-    
     def _native_ds(self, chunks: Union[str,dict,None] = 'auto') -> xr.Dataset:
         return xr.open_dataset(self.uri, engine=self.engine, chunks=chunks)
 
@@ -303,6 +304,10 @@ class ZarrParallelAssembler:
         # Copy global attributes
         ds_dims_only.attrs = ds_transformed[0].attrs
 
+        if self.add_attrs is not None:
+            for k,v in self.add_attrs.items():
+                ds_dims_only[k] = v
+
         # Copy dimension encoding
         for dim in worker_dims.keys():
             encoding = ds_transformed[0][dim].encoding
@@ -342,7 +347,7 @@ class ZarrParallelAssembler:
 
     def _arrange_region_selector(
             self, 
-            cache_dir: str, 
+            zarr_store: str, 
             dim_spec: dict):
 
         return {
@@ -350,7 +355,7 @@ class ZarrParallelAssembler:
                 'uri': self.uri,
                 'engine': self.engine,
                 'kwargs':{},
-                'zarr_cache': self.zarr_store_path(cache_dir)
+                'zarr_cache': zarr_store
             },
             'common':{'pre_transforms': self._determine_regional_transforms()},
             'variables': self.variables,
@@ -359,7 +364,7 @@ class ZarrParallelAssembler:
 
     def cache(
             self,
-            cache_dir: Union[str,object], # Can be zarr store or Pathlike?
+            cache_store: Union[str,object], # Can be zarr store or Pathlike?
             num_jobs: Union[int,None] = None, # Number of workers per zarr store
             generate_stats: bool = False,
             deploy_mode: str = 'SLURM',
@@ -367,6 +372,7 @@ class ZarrParallelAssembler:
             simultaneous_worker_limit: int = 50,
             memory_limit: str = "2GB",
             worker_timeout: str = "30:00",
+            overwrite: bool = True
         ):
         """
         Method to cache selected data to a zarr store
@@ -377,8 +383,16 @@ class ZarrParallelAssembler:
         if num_jobs is None:
             num_jobs = self._determine_num_jobs(memory_limit)
 
-        if os.path.isdir(self.zarr_store_path(cache_dir)):
-            os.system(f'rm -rf {self.zarr_store_path(cache_dir)}')
+        cache_dir = '/'.join(cache_store.split('/')[:-1])
+        zarr_store = cache_store.split('/')[-1]
+
+        # Handle overwriting existing store
+        if os.path.isdir(cache_store):
+            if overwrite:
+                os.system(f'rm -rf {cache_store}')
+            else:
+                raise ValueError()
+
         if not os.path.isdir(f'{cache_dir}/temp'):
             os.makedirs(f'{cache_dir}/temp')
 
@@ -393,7 +407,7 @@ class ZarrParallelAssembler:
 
         chunks = {d: min(v['cache_size'],v['worker_size']) for d, v in worker_config['region_info'].items()}
 
-        worker_config_file = self.zarr_store_path(cache_dir).replace('zarr_cache','zarr_cache/temp') + '.json'
+        worker_config_file = f'{cache_dir}/temp/{zarr_store}.temp.json'
 
         with open(worker_config_file,'w') as f:
             json.dump(worker_config, f)
@@ -405,7 +419,7 @@ class ZarrParallelAssembler:
 
                 status = configure_slurm_deployment(
                     cache_dir,
-                    self.zarr_store(),
+                    zarr_store,
                     worker_config_file,
                     actual_workers,
                     simultaneous_worker_limit=simultaneous_worker_limit,
@@ -436,7 +450,7 @@ class ZarrParallelAssembler:
                     ds.chunk(chunks)
 
                     ds.to_zarr(
-                        self.zarr_store_path(cache_dir), 
+                        zarr_store, 
                         compute=True,
                         zarr_format=2, 
                         consolidated=True,
