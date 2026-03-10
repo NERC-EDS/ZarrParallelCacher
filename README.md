@@ -1,6 +1,6 @@
 # Zarr Parallel Cacher
 
-This package has been developed as part of the FRAME-FM AI project. It has been separated into its own module for ease of reusability across multiple projects. AI-specific steps may form part of the package, but may also be disabled by default.
+This package has been developed as part of the NERC EDS FRAME-FM AI project. It has been separated into its own module for ease of reusability across multiple projects. AI-specific steps may form part of the package, but may also be disabled by default.
 
 ## Basic Usage
 
@@ -23,7 +23,7 @@ The above code snippet demonstrates the use of this package. The `data_uri` and 
 
 The `preprocessors` list defines the set of preprocessing transforms to apply to the dataset (including selection) at the point of caching. This should include all transforms that should be applied to the dataset before writing to the zarr cache.
 
-The `num_jobs` and `simultaneous_worker_limit` parameters are used to configure for parallel deployment. If no `num_jobs` is provided, the assembler will calculate the optimal number of jobs for your memory limit (recommended).
+The `num_jobs` and `simultaneous_worker_limit` parameters are used to configure for parallel deployment. If no `num_jobs` is provided, the assembler will calculate the optimal number of jobs for your memory limit (recommended). The default memory limit is 2GB and the timeout is set at 30 minutes, although this only applies to SLURM deployments at present.
 
 ## Transforms/Preprocessors
 Transformations to the data may be specified via the selector option passed in the above example. Xarray-native transformations are supported, as well as transforms from the FRAME-FM package if installed.
