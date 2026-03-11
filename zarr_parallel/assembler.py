@@ -419,7 +419,7 @@ class ZarrParallelAssembler:
         logger.info(f'Requested workers: {num_jobs}')
         logger.info(f'Actual workers: {actual_workers} (Chunk limitations)')
 
-        worker_config = self._arrange_region_selector(cache_dir, dim_spec)
+        worker_config = self._arrange_region_selector(zarr_store=cache_store, dim_spec=dim_spec)
 
         chunks = {d: min(v['cache_size'],v['worker_size']) for d, v in worker_config['region_info'].items()}
 
