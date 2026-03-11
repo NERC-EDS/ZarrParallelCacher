@@ -380,6 +380,22 @@ class ZarrParallelAssembler:
         Will send out parallel workers and has option to wait for completion.
         """
 
+        if deploy_mode == 'series':
+            ds_transformed = self._obtain_ds()
+            self.logger.info('Writing unparallelised dataset')
+            for ds in ds_transformed:
+
+                ds.chunk(self.output_chunks)
+
+                ds.to_zarr(
+                    zarr_store, 
+                    compute=True,
+                    zarr_format=2, 
+                    consolidated=True,
+                    write_empty_chunks=True,
+                    mode='w')
+            return
+
         if num_jobs is None:
             num_jobs = self._determine_num_jobs(memory_limit)
 
@@ -441,23 +457,6 @@ class ZarrParallelAssembler:
                     memory_limit=memory_limit,
                     threads_per_worker=1
                 )
-
-            case 'series':
-                # Serial cacher for very small datasets.
-                ds_transformed = self._obtain_ds()
-                for ds in ds_transformed:
-
-                    ds.chunk(chunks)
-
-                    ds.to_zarr(
-                        zarr_store, 
-                        compute=True,
-                        zarr_format=2, 
-                        consolidated=True,
-                        write_empty_chunks=True,
-                        mode='w')
-                
-                status = True
 
         if not status:
             raise ValueError
