@@ -40,6 +40,7 @@ def process_jobs(job_ids):
 
         # Garbage Collect all data for this current worker.
         gc.collect()
+        dask_worker.heartbeat()
     return True
 
 def get_id(dask_worker):
@@ -88,7 +89,7 @@ def configure_dask_deployment(
                 msgs += 1
 
         complete = is_complete
-        print(f'Awaiting all results: {msgs}/{len(results)}')
+        logger.info(f'Awaiting all results: {msgs}/{len(results)}')
         time.sleep(1)
 
     success, failed = 0,0
@@ -100,9 +101,9 @@ def configure_dask_deployment(
 
     client.close()
 
-    print("\n--- Summary ---")
-    print(f'Results: {len(results)}')
-    print(f' > Success: {success}')
-    print(f' > Failed: {failed}')
+    logger.info("\n--- Summary ---")
+    logger.info(f'Results: {len(results)}')
+    logger.info(f' > Success: {success}')
+    logger.info(f' > Failed: {failed}')
 
     return True
