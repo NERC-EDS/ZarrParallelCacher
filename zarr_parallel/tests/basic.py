@@ -25,7 +25,7 @@ def main():
         cache_label='_vtest'
     )
     
-    zp.cache(cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache',deploy_mode='dask_distributed',simultaneous_worker_limit=1)
+    zp.cache(cache_store='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache/v0.3.2.zarr',deploy_mode='dask_distributed',simultaneous_worker_limit=4)
 
 if __name__ == '__main__':
     main()

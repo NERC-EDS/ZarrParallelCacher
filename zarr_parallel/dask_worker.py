@@ -28,6 +28,8 @@ def process_jobs(job_ids):
     set_verbose(int(os.environ.get('ZP_LOG_LEVEL',0)))
 
     dask_worker = get_worker()
+    loop = dask_worker.loop
+    loop.add_callback(dask_worker.heartbeat)
     config = os.environ.get("DASK_WORKER_CONFIG")
 
     for job_id in job_ids:
@@ -40,7 +42,7 @@ def process_jobs(job_ids):
 
         # Garbage Collect all data for this current worker.
         gc.collect()
-        dask_worker.heartbeat()
+        #dask_worker.periodic_callbacks["heartbeat"].callback()
     return True
 
 def get_id(dask_worker):

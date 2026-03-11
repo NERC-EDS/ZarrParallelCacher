@@ -327,8 +327,8 @@ class ZarrParallelAssembler:
 
         encoding = {}
         for dsv in ds_transformed:
-            logger.info(f'Writing empty DataArray: {dsv}')
             var = dsv.name
+            logger.info(f'Writing empty DataArray: {var}')
             ds_dims_only[var] = xr.DataArray(empty_var, dims=list(worker_dims.keys()))
             ds_dims_only[var].attrs = dsv.attrs
 

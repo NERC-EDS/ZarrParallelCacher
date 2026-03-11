@@ -1,6 +1,6 @@
 [project]
 name = "zarr-parallel"
-version = "0.3.0"
+version = "0.3.1"
 description = "Package for efficiently parallelising zarr write operations based on awareness of source chunks"
 authors = [
     {name = "Daniel Westwood",email = "daniel.westwood@stfc.ac.uk"}
