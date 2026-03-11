@@ -30,3 +30,8 @@ Transformations to the data may be specified via the selector option passed in t
 
 ## Selection Recommendations
 The assembler will halt to recommend alternative data selections based on the underlying chunk structure. Proceeding without recommendations is not advised, as mismatched chunk-region borders may involve duplicating chunk requests and significantly increasing memory requirements per worker.
+
+### Version 0.3 Changes
+- Heartbeats between jobs in the dask workers.
+- Now able to shut off dask distributed info messages.
+- Added ability to add attributes
