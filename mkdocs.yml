@@ -1,0 +1,3 @@
+site_name: ZarrParallelCacher
+site_description: A tool to cache zarr data in parallel.
+site_author: Daniel Westwood
