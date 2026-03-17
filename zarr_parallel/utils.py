@@ -10,7 +10,7 @@ logstream = logging.StreamHandler()
 formatter = logging.Formatter('%(levelname)s [%(name)s]: %(message)s')
 logstream.setFormatter(formatter)
 
-def set_verbose(level: int):
+def set_verbose(level: int, all: bool = False):
     """
     Reset the logger basic config.
     """
@@ -25,7 +25,7 @@ def set_verbose(level: int):
         level = len(levels) - 1
 
     for name in logging.root.manager.loggerDict:
-        if 'ZP' in name:
+        if 'ZP' in name or all:
             lg = logging.getLogger(name)
             lg.setLevel(levels[level])
             # Test

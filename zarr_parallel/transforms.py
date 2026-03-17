@@ -99,7 +99,7 @@ def apply_transforms(
             ds = ds.isel(**region_transform)
         elif transform_type in TRANSFORM_MAPPING:
             # Apply specific custom transform here.
-            ds = TRANSFORM_MAPPING[transform_type](ds, **transform)
+            ds = TRANSFORM_MAPPING[transform_type](ds, **transform) # resolve_transform(transform)(ds)
         else:
             raise ValueError(f'Unsupported transformation: {transform_type}')
 
