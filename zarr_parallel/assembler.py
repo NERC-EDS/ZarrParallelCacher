@@ -13,8 +13,9 @@ import dask
 import numpy as np
 import xarray as xr
 import json
+import copy
 
-from zarr_parallel.utils import logstream, set_verbose
+from zarr_parallel.utils import logstream, interpret_mem_limit
 from zarr_parallel.dask_worker import configure_dask_deployment
 from zarr_parallel.slurm import configure_slurm_deployment
 from zarr_parallel.transforms import apply_transforms
@@ -60,13 +61,20 @@ class ZarrParallelAssembler:
         self.variables     = variables
         self.transforms    = preprocessors
         self.dimensions = None
+        self.recommendations = {}
 
         self.add_attrs = add_attrs
 
+        self.reconfigure = None
+        self.tiler_transform = None
         for transform in self.transforms:
             if transform['type'] in ['sel','isel']:
                 self.dimensions    = dict(transform)
                 self.dimensions.pop('type')
+            if transform['type'] == 'tiled':
+                self.reconfigure = 'tiled'
+                self.tiler_transform = copy.deepcopy(transform)
+                self.tiler_transform.pop('type')
 
         if self.dimensions is None:
             raise ValueError('No selection criteria applied')
@@ -99,6 +107,8 @@ class ZarrParallelAssembler:
                 if len(chunkset) > 1:
                     self.chunked_dims[var].append(dim)
 
+        self.batch_dim_worker_size = None
+
         chunked_dims = set([tuple(c) for c in self.chunked_dims.values()])
         if len(chunked_dims) > 1:
             raise ValueError('Parallel caching not supported for different structures within the same zarr store')
@@ -107,14 +117,77 @@ class ZarrParallelAssembler:
         # If the source chunks differ between variables, raise an 
         # error as this is not yet supported.
 
+    def _recommend_tiling(self, ds: xr.Dataset):
+        """
+        Recommend tiling if the source chunk structure is either incompatible with the tiling scheme or there
+        are simple improvements.
+        """
+
+        tiling_recommends = {'order':None, 'size':{}}
+
+        reorder = False
+        nchunks = {d: len(chunks) for d, chunks in ds.chunks.items()}
+        nchunks = sorted(nchunks.items(), key=lambda x: x[1], reverse=True)
+        for dx, (dim, _) in enumerate(nchunks):
+            if list(self.tiler_transform.keys())[dx] != dim:
+                reorder = True
+
+        if reorder:
+            tiling_recommends['order'] = (list(set(self.tiler_transform.keys())), list([d for d, _ in nchunks]))
+
+        for dx, (dim, chunk) in enumerate(ds.chunks.items()):
+            tile = self.tiler_transform.get(dim,None)
+
+            if tile is not None:
+                rem = tile%chunk[0]
+                if rem == 0 or rem == tile: 
+                    continue
+
+                # Tiling recommendations should bring tile size in line with chunks
+                if rem < chunk[0]/2:
+                    tiling_recommends['size'][dim] = (tile, tile - rem)
+                else:
+                    tiling_recommends['size'][dim] = (tile, tile + (chunk[0] - rem))
+
+        self.recommendations['tiling'] = tiling_recommends
+            
+    def _display_recommendations(self):
+        """
+        Display recommendations for improving tiling and selection arrangements.
+        """
+        recommended = False
+        if len(self.recommendations.get('sel',{}).keys()) > 0:
+            recommended = True
+            print('Selection recommendations:')
+            for dim, recommended in self.recommendations['sel'].items():
+                print(f' > Adjust {dim} minimum from {recommended[1]} to {recommended[0]}')
+        
+        order = self.recommendations.get('tiling',{}).get('order')
+        sizes = self.recommendations.get('tiling',{}).get('size',{})
+        if order is not None or len(sizes.keys()) > 0:
+            recommended = True
+            print('Tiling recommendations:')
+            if order is not None:
+                print(f' > Adjust order of tiles from {order[0]} to {order[1]}')
+            if len(sizes.keys()) > 0:
+                for dim, size in sizes.items():
+                    print(f' > Adjust tile size for {dim} from {size[0]} to {size[1]}')
+
+        if recommended:
+            ask = input('Continue without recommendations? (y/n) ')
+            if ask.lower() != 'y':
+                raise ValueError('Exiting to allow adjustments based on recommendations')
+        else:
+            logger.info('No recommendations for improving tiling or selection arrangements')
+
     def _native_ds(self, chunks: Union[str,dict,None] = 'auto') -> xr.Dataset:
         return xr.open_dataset(self.uri, engine=self.engine, chunks=chunks)
 
-    def _obtain_ds(self, chunks: Union[str,dict,None] = 'auto') -> xr.Dataset:
+    def _transform_ds(self, chunks: Union[str,dict,None] = 'auto'):
         """
         Obtain the xarray dataset source object for the parent dataset
         """
-        import copy
+
         transforms = copy.deepcopy(self.transforms)
         variables = copy.deepcopy(self.variables)
 
@@ -122,45 +195,28 @@ class ZarrParallelAssembler:
             transformed = apply_transforms(
                 self._native_ds(chunks=chunks),
                 common_transforms=transforms,
-                variable_transforms=variables,
-                recommend_changes=True
+                variable_transforms=variables
             )
-            self._ds = transformed['datasets']
-            self.offsets = transformed['offsets']
+            self._ds        = transformed['datasets']
+            self.offsets    = transformed['offsets']
             self.array_ends = transformed['ends']
-
-        return self._ds
+            self.dim_spec   = transformed['dim_spec']
+            self.recommendations['sel'] = transformed['recommendations']['sel']
     
     def _determine_num_jobs(self, memory_limit: str) -> int:
         """
         Determine the number of jobs given the memory limit
 
-        Divide the total array dimensions by this value to get the total 
+        Unused function, as it has been determined that jobs should
+        be split at the worker-level and not at this higher level. This
+        reduces overheads with setting up small parallel-writes as separate jobs.
+
         """
-
-        mem_units = ['B','KB','MB','GB','TB','PB']
-        bibi_units = ['z','KIB','MIB','GIB','TIB','PIB']
-
-        suffix = memory_limit[-2:]
-        if suffix[0].isnumeric():
-            suffix = suffix[-1]
-
-        mem = float(memory_limit.replace(suffix,''))
-        if suffix in mem_units:
-            mem*=(1000**mem_units.index(suffix.upper()))
-        elif suffix in bibi_units:
-            mem*=(1024**mem_units.index(suffix.upper()))
-        else:
-            raise ValueError(
-                f'Memory Limit format unrecognised: {memory_limit} - '
-                'Suffix should conform to e.g MB/GiB'
-            )
         
-        mem = mem/16
+        mem = interpret_mem_limit(memory_limit)/16
         
         # Increase number of minimal_arrays by 1 until memory limit is reached
         # total_array / (minimal_array*n_arrays) gives the optimal number of workers
-        self._obtain_ds()
         
         min_arr, total_arr = [],[]
         for dim in self.dimensions.keys():
@@ -193,56 +249,31 @@ class ZarrParallelAssembler:
 
         logger.info(f'Dividing into {njobs} jobs for job memory limit {memory_limit}')
 
+        # New setup - parallelise 
+
         return njobs
-
-    def _determine_region_extents(self) -> dict:
-        """
-        Determine from the provided selector the specs of the dim.
-        
-        This includes the region minimum and maximum extents in terms
-        of the size of the array. This converts all coordinate selections
-        to indexed values from 0 to the length of the array."""
-
-        ds = self._obtain_ds()
-        dim_spec = {}
-
-        # Determine region extents
-        for dim, dinf in self.dimensions.items():
-            dim_arr = ds[0][dim].to_numpy()
-
-            region_min = 0 + self.offsets[dim] # Offset to start of slice
-            region_max = len(dim_arr) + self.offsets[dim]
-
-            total_region = int(region_max) - int(region_min)
-            dim_spec[dim] = {
-                'source_min': int(region_min),
-                'source_max': int(region_max),
-                'total_region': total_region
-            }
-
-        return dim_spec
     
-    def _determine_worker_arrangements(self, dim_spec: dict, num_workers: int) -> tuple:
+    def _determine_worker_arrangements(self, num_workers: int) -> tuple:
         """
         Determine best arrangement for worker region extents based on source and 
         destination chunk arrangements.
         """
 
-        chunk_tots     = sum([dim_spec[c]['total_region'] for c in self.chunked_dims])
+        chunk_tots     = sum([self.dim_spec[c]['total_region'] for c in self.chunked_dims])
 
-        dim_weights    = [(dim_spec[c]['total_region']/chunk_tots) if c in self.chunked_dims else 0 for c in dim_spec.keys()]
+        dim_weights    = [(self.dim_spec[c]['total_region']/chunk_tots) if c in self.chunked_dims else 0 for c in self.dim_spec.keys()]
 
         num_workers_per_dim = divide_workers(
             num_workers, 
             dim_weights,
-            list(dim_spec.keys())
+            list(self.dim_spec.keys())
         )
         actual_workers = 1
         for dim, dinf in self.dimensions.items():
 
-            total_region = dim_spec[dim]['total_region']
-            region_min   = dim_spec[dim]['source_min']
-            region_max   = dim_spec[dim]['source_max']
+            total_region = self.dim_spec[dim]['total_region']
+            region_min   = self.dim_spec[dim]['source_min']
+            region_max   = self.dim_spec[dim]['source_max']
 
             # Underlying chunk structure is now always known, as it can be derived from xarray.
 
@@ -264,7 +295,7 @@ class ZarrParallelAssembler:
             worker_size = int(rpw * min_region)
 
             # To go into the config file for the individual workers
-            dim_spec[dim] = {
+            self.dim_spec[dim] = {
                 'source_min': int(region_min),
                 'source_max': int(region_max),
                 'worker_size': worker_size,
@@ -274,7 +305,7 @@ class ZarrParallelAssembler:
 
             actual_workers *= math.ceil(total_region/worker_size)
 
-        return dim_spec, actual_workers
+        return actual_workers
     
     def _determine_regional_transforms(self) -> list:
         """
@@ -288,28 +319,117 @@ class ZarrParallelAssembler:
                 regional_transforms.append(transform)
         return regional_transforms
 
+    def _reconfigure_regions(self, num_workers: int, memory_limit: str = "2GB") -> tuple:
+        """
+        Reconfigure regions based on the reconfigure parameter
+        """
+
+        actual_workers = num_workers
+
+        region_info = {}
+        match self.reconfigure:
+            case 'tiled':
+
+                ds = self._ds[0]
+                # Total region is the full size of the array at this point in each fine_dim
+
+                primary_dim = list(self.tiler_transform.keys())[0]
+                # Primary dimension for batch dim parallelisation
+                self.batch_dim_worker_size = math.ceil(
+                    self.dim_spec[primary_dim]['total_region']/self.tiler_transform[primary_dim]
+                )
+
+                # Limit batch dim worker size given the number of workers
+                if self.batch_dim_worker_size > len(ds.batch_dim)/num_workers:
+                    self.batch_dim_worker_size = int(len(ds.batch_dim)/num_workers)
+                
+                # Limit number of workers given limiting batch dim worker size
+                if len(ds.batch_dim)/self.batch_dim_worker_size < num_workers:
+                    actual_workers =  int(len(ds.batch_dim)/self.batch_dim_worker_size)
+
+                if math.prod(self.tiler_transform.values())*self.batch_dim_worker_size > interpret_mem_limit(memory_limit)/2:
+                    # Default to 1 if it looks like the tiling scheme will produce very large tiles that may cause memory issues for workers.
+                    self.batch_dim_worker_size = 1
+
+                batch_dim = {
+                    'batch_dim':{
+                        'total_region':len(ds.batch_dim), 
+                        'source_min':0,
+                        'source_max':len(ds.batch_dim),
+                        'worker_size':self.batch_dim_worker_size
+                    }
+                }
+
+                fine_dim_set = [f'{d}_fine' for d in self.tiler_transform.keys()]
+
+                fine_dims = {dim: {
+                    'total_region': len(self._ds[0][dim]),
+                    'source_min': 0,
+                    'source_max': len(self._ds[0][dim]),
+                    'worker_size': len(self._ds[0][dim])
+                } for dim in fine_dim_set}
+
+                # Original dimensions
+                dimensional_vars = [d for d in self.dimensions.keys()]
+                
+                region_info = {
+                    'dims': batch_dim,
+                    'fine_dims': fine_dims,
+                    'coords': dimensional_vars
+                }
+
+        return region_info, actual_workers
+
+    def _output_chunks(self) -> dict:
+        """
+        Assemble output chunks
+        
+        If no output chunking is defined, leave empty.
+        If one or more dimensions are defined, fill rest with source chunks
+        """
+
+        if self.reconfigure == 'tiled':
+            return { 'batch_dim':1 }
+
+        if self.output_chunks == {}:
+            return {}
+        
+        output_chunks = {}
+        for dim in self.dimensions.keys():
+            output_chunks[dim] = self.output_chunks.get(dim,None) or self.source_chunks[dim]
+
+        return output_chunks
+ 
     def _create_empty_zarr(self, worker_config: dict):
         """
         Create empty zarr based on the first of the variable dataArrays.
+
+        :param worker_config: dict. 
         """
         
-        ds_transformed = self._obtain_ds()
-        
-        worker_dims = worker_config['region_info']
+        ds_transformed = self._ds
 
-        ds_dims_only = xr.Dataset({
-            d: ds_transformed[0][d] for d in worker_dims.keys()
-        })
+        worker_dims = worker_config['region_info']['dims']
+        # worker_scalars = worker_config['region_info']['scalars']
+        default_coords = worker_config['region_info'].get('coords')
+
+        # Dimensions of the tiled or un-tiled dataset (configured above)
+        data_vars = {d: ds_transformed[0][d] for d in worker_dims.keys()}
+        all_dims = copy.deepcopy(data_vars)
+        if self.reconfigure:
+            all_dims.update({d: ds_transformed[0][d] for d in worker_config['region_info']['fine_dims'].keys()})
+
+        ds_dims_only = xr.Dataset(data_vars=data_vars)
         
         # Copy global attributes
         ds_dims_only.attrs = ds_transformed[0].attrs
 
         if self.add_attrs is not None:
             for k,v in self.add_attrs.items():
-                ds_dims_only[k] = v
+                ds_dims_only.attrs[k] = v
 
         # Copy dimension encoding
-        for dim in worker_dims.keys():
+        for dim in data_vars.keys():
             encoding = ds_transformed[0][dim].encoding
             encoding.pop('chunks',None)
             encoding.pop('preferred_chunks',None)
@@ -317,24 +437,41 @@ class ZarrParallelAssembler:
 
         # Add encoding per dimension (compressors, filters etc.)
 
-        chunks = {d: min(v['cache_size'],v['worker_size']) for d, v in worker_dims.items()}
+        chunks = self._output_chunks()
 
-        logger.info(f'Rechunking: {chunks}')
-        ds_dims_only.chunk(chunks)
+        if len(chunks.keys()) > 0:
+            # No specified chunks - no rechunking
+            logger.info(f'Rechunking: {chunks}')
+            ds_dims_only.chunk(chunks)
 
-        empty_shape = [v['total_region'] for v in worker_dims.values()]
-        empty_var = da.empty(empty_shape, chunks=chunks)
+        empty_shape = [len(v) for v in all_dims.values()]
+        dask_chunks = tuple(chunks[d] if d in chunks else len(all_dims[d]) for d in all_dims.keys() )
+        empty_var = da.empty(empty_shape, chunks=dask_chunks)
+
+        for coord in default_coords:
+            logger.info(f'Filling in {coord}')
+            ds_dims_only = ds_dims_only.assign_coords(
+                **{coord: (
+                    ds_transformed[0][coord].dims, 
+                    np.array(ds_transformed[0][coord]))
+                }
+            )
+            ds_dims_only[coord].attrs = ds_transformed[0][coord].attrs
 
         encoding = {}
         for dsv in ds_transformed:
             var = dsv.name
             logger.info(f'Writing empty DataArray: {var}')
-            ds_dims_only[var] = xr.DataArray(empty_var, dims=list(worker_dims.keys()))
+            ds_dims_only[var] = xr.DataArray(empty_var, dims=list(all_dims.keys()))
             ds_dims_only[var].attrs = dsv.attrs
 
             # Force Zarr to use Dask chunk structure
             # Preserve non-chunk encoding attributes
-            encoding[var] = {'chunks': [v['cache_size'] for d, v in worker_dims.items()]}
+            if len(chunks.keys()) > 1:
+                encoding[var] = {'chunks': [v for v in chunks.values()]}
+
+        if 'batch_dim' in ds_dims_only.dims:
+            ds_dims_only = ds_dims_only.reset_index('batch_dim')
 
         ds_dims_only.to_zarr(
             worker_config['dataset']['zarr_cache'], 
@@ -348,7 +485,14 @@ class ZarrParallelAssembler:
     def _arrange_region_selector(
             self, 
             zarr_store: str, 
-            dim_spec: dict):
+            memory_limit: str,
+            dim_spec: Union[dict,None] = None,
+        ) -> dict:
+        """
+        Arrange the region selection information.
+        
+        This includes the region info for all dimensions, source chunks and memory
+        limit for each worker."""
 
         return {
             'dataset':{
@@ -359,7 +503,10 @@ class ZarrParallelAssembler:
             },
             'common':{'pre_transforms': self._determine_regional_transforms()},
             'variables': self.variables,
-            'region_info': dim_spec
+            'region_info': {'dims':dim_spec, 'region_isel':dim_spec},
+            'source_chunks': self.source_chunks,
+            'output_chunks': self._output_chunks(),
+            'memory_limit': memory_limit
         }
 
     def cache(
@@ -372,7 +519,8 @@ class ZarrParallelAssembler:
             simultaneous_worker_limit: int = 50,
             memory_limit: str = "2GB",
             worker_timeout: str = "30:00",
-            overwrite: bool = True
+            overwrite: bool = True,
+            recommend_changes: bool = True
         ):
         """
         Method to cache selected data to a zarr store
@@ -381,9 +529,9 @@ class ZarrParallelAssembler:
         """
 
         if deploy_mode == 'series':
-            ds_transformed = self._obtain_ds()
             self.logger.info('Writing unparallelised dataset')
-            for ds in ds_transformed:
+            self._transform_ds()
+            for ds in self._ds:
 
                 ds.chunk(self.output_chunks)
 
@@ -397,7 +545,7 @@ class ZarrParallelAssembler:
             return
 
         if num_jobs is None:
-            num_jobs = self._determine_num_jobs(memory_limit)
+            num_jobs = simultaneous_worker_limit 
 
         cache_dir = '/'.join(cache_store.split('/')[:-1])
         zarr_store = cache_store.split('/')[-1]
@@ -412,16 +560,30 @@ class ZarrParallelAssembler:
         if not os.path.isdir(f'{cache_dir}/temp'):
             os.makedirs(f'{cache_dir}/temp')
 
-        dim_spec = self._determine_region_extents()
+        if self.reconfigure:
+            self._recommend_tiling(self._native_ds())
 
-        dim_spec, actual_workers = self._determine_worker_arrangements(dim_spec, num_jobs)
+        # Perform transformations
+        self._transform_ds()
 
-        logger.info(f'Requested workers: {num_jobs}')
-        logger.info(f'Actual workers: {actual_workers} (Chunk limitations)')
+        if recommend_changes:
+            self._display_recommendations()
 
-        worker_config = self._arrange_region_selector(zarr_store=cache_store, dim_spec=dim_spec)
+        actual_workers = self._determine_worker_arrangements(num_jobs)
 
-        chunks = {d: min(v['cache_size'],v['worker_size']) for d, v in worker_config['region_info'].items()}
+        if self.reconfigure:
+            # Tiled datasets
+            worker_config = self._arrange_region_selector(zarr_store=cache_store, memory_limit=memory_limit)
+            worker_config['region_info'], actual_workers = self._reconfigure_regions(num_jobs, memory_limit=memory_limit)
+            worker_config['region_info']['region_isel'] = self.dim_spec
+        else:
+            worker_config = self._arrange_region_selector(zarr_store=cache_store, dim_spec=self.dim_spec, memory_limit=memory_limit)
+
+        if actual_workers != num_jobs:
+            logger.info(f'Requested job split: {num_jobs} jobs')
+            logger.info(f'Actual job split: {actual_workers} jobs (Chunk/Tile limitations)')
+
+        chunks = self._output_chunks()
 
         worker_config_file = f'{cache_dir}/temp/{zarr_store}.temp.json'
 

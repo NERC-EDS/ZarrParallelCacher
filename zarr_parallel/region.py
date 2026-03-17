@@ -5,11 +5,14 @@ __copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
 import logging
 import math
 import sys
+from typing import Union
+from datetime import datetime
 
 import xarray as xr
+import dask.array as da
 import json
 
-from zarr_parallel.utils import logstream
+from zarr_parallel.utils import logstream, interpret_mem_limit, set_verbose
 from zarr_parallel.transforms import apply_transforms
 
 logger = logging.getLogger('ZP.' + __name__)
@@ -44,7 +47,7 @@ if task_id is not None:
     client = Client(cluster)
 
 class RegionWorker:
-    def __init__(self, id: str, config: str):
+    def __init__(self, id: str, config: str, heartbeat_timeout: Union[int,None] = None):
 
         with open(config) as f:
             content = json.load(f)
@@ -53,9 +56,21 @@ class RegionWorker:
         self.dsinfo      = content['dataset']
         self.transforms  = content['common']['pre_transforms']
         self.variables   = content['variables']
-        self.region_info = content['region_info']
+        self.region_isel = content['region_info']['region_isel']
 
-        self.dimensions = list(self.region_info.keys())
+        # Non-tiled datasets will have the same parallelisable and source dims.
+        self.parallelisable_dims  = content['region_info']['dims']
+        self.fine_dims   = content['region_info'].get('fine_dims',{})
+        self.source_dims = list(self.region_isel.keys())
+
+        if list(self.parallelisable_dims.keys()) != self.source_dims:
+            self.tiled = True
+
+        self.source_chunks = content['source_chunks']
+        self.output_chunks = content['output_chunks']
+        self.memory_limit = content['memory_limit']
+
+        self.heartbeat = heartbeat_timeout
 
         # Determine coordinate/region extents
         self.coord_extent, self.region_extent   = self.map_region()
@@ -71,8 +86,8 @@ class RegionWorker:
         self._prepare_dataset()
 
     def map_region(self):
-        coord_extent = [math.ceil((v['source_max']-v['source_min'])/v['worker_size']) for v in self.region_info.values()]
-        region_extent = [int(v['source_max']-v['source_min']) for v in self.region_info.values()]
+        coord_extent = [math.ceil((v['source_max']-v['source_min'])/v['worker_size']) for v in self.parallelisable_dims.values()]
+        region_extent = [int(v['source_max']-v['source_min']) for v in self.parallelisable_dims.values()]
 
         return coord_extent, region_extent
 
@@ -97,17 +112,34 @@ class RegionWorker:
     def region_from_coords(self):
 
         region = {}
-        for i in range(len(self.dimensions)):
-            dim = self.dimensions[i]
+        for i, (dim, dinfo) in enumerate(self.parallelisable_dims.items()):
 
-            rmin = self.region_info[dim]['worker_size']*self.coords[i]
-            rmax = self.region_info[dim]['worker_size']*(self.coords[i]+1)
+            rmin = dinfo['worker_size']*self.coords[i]
+            rmax = dinfo['worker_size']*(self.coords[i]+1)
 
             if self.coords[i] == self.coord_extent[i]-1:
                 rmax = self.region_extent[i]
             region[dim] = slice(rmin,rmax)
 
+        # Add tiled fine dims in the case of additional fine dims
+        for dim, dinfo in self.fine_dims.items():
+            region[dim] = slice(dinfo['source_min'], dinfo['source_max'])
+
         return region
+
+    def start_from(self, var):
+        """
+        Detect past progress on writing the zarr store
+        
+        Limitation: Primary chunk dimension must be the first dimension.
+        """
+
+        chunk_id = 0
+        while os.path.isfile(
+            f"{self.dsinfo['zarr_cache']}/{var}/{chunk_id}.0.0"
+        ):
+            chunk_id += 1
+        return chunk_id
     
     def write_data_region(self):
 
@@ -119,7 +151,7 @@ class RegionWorker:
 
         # Determine current region
 
-        chunks = {d: min(v['cache_size'],v['worker_size']) for d, v in self.region_info.items()}
+        chunks = self.output_chunks
 
         # Replace with logging
         logger.info(f'ID: {self.id}')
@@ -131,28 +163,142 @@ class RegionWorker:
 
             var = darr.name
 
-            # Watch for memory limits.
-            darr = darr.load()
+            logger.info(f"Writing {var} Region")
 
-            logger.info(f"Writing {var} Region: ")
-            for d, v in self.dslice.items():
-                logger.info(f'{d} {v} -> {self.region[d]}')
+            # heartbeat required - split into sections 
+            # chunking required - split into sections
+            start_from = self.start_from(var)
 
-            darr.encoding.pop('chunks')
-            darr.chunk(chunks)
+            force_rechunk = chunks != {} and chunks != self.source_chunks
+            if not force_rechunk and not self.heartbeat and not start_from and not self.tiled:
+                # Write the whole region to the zarr cache
+                darr.to_zarr(
+                    self.dsinfo['zarr_cache'], 
+                    zarr_format=2, 
+                    compute=True, 
+                    consolidated=True,
+                    region=self.region,
+                    write_empty_chunks=True,
+                    mode='r+')
+                
+            else:
+                self._balanced_chunk_write(var, darr, chunks, start_from=start_from)
 
-            # Write the specific region to the zarr cache
-            darr.to_zarr(
-                self.dsinfo['zarr_cache'], 
-                zarr_format=2, 
-                compute=True, 
-                consolidated=True,
-                region=self.region,
-                write_empty_chunks=True,
-                mode='r+')
-        
         logger.info(f'Complete for {self.coords}')
 
+    def _balanced_chunk_write(self, var: str, darr: xr.DataArray, chunks: dict, start_from: int = 0):
+        """
+        Control the rate of chunk writes based on time/memory requirements
+        """
+
+        # Standard approach: single chunk output at a time.
+        
+        # Balanced approach:
+        # - Chunking invokes numpy arrays - balance memory up to limit
+        # - Dask workers invoke heartbeat - balance timeout up to limit
+        # - Split chunk writes require max number of chunks per-write that fit within limits
+
+        primary_dim = list(self.parallelisable_dims.keys())[0]
+        prime_slice = start_from*chunks[primary_dim]
+        chunk_size = chunks[primary_dim]
+
+        memory_limit_bytes = 0.85 * interpret_mem_limit(self.memory_limit)
+
+        max_mem_batch_chunk = math.floor(memory_limit_bytes / (math.prod(chunks.values()) * 8))
+
+        region_write_offset = self.coords[0]*self.parallelisable_dims[primary_dim]['worker_size']
+
+        # Limitation: Tiled datasets will always result in 1-1 tile-chunking
+        if self.tiled:
+            darr = darr.isel(**{
+                primary_dim: slice(
+                    region_write_offset,
+                    region_write_offset + self.parallelisable_dims[primary_dim]['worker_size']
+                )
+            })
+            mem_chunks = 1
+            for dim, dinf in self.fine_dims.items():
+                chunks[dim] = dinf['source_max'] - dinf['source_min']
+
+                # If source chunks are larger than the tile selection, memory size is based on the source chunks
+                mem_chunks *= max(self.source_chunks.get(dim.split('_')[0]), chunks[dim])
+
+            max_mem_batch_chunk = math.floor(memory_limit_bytes / (mem_chunks * 8))
+
+        if max_mem_batch_chunk < 1:
+            raise ValueError(
+                f'Memory limit too low to process even a single chunk. '
+                f'Limit: {self.memory_limit}, Approx Required: {mem_chunks*8/1e6 :.2f} MB')
+
+        chunk_batch = int(max_mem_batch_chunk)
+
+        complete = False
+        while not complete:
+
+            timings = []
+
+            # Handle final case + overflowing chunk batch request size
+            if prime_slice + chunk_batch*chunk_size > darr[primary_dim].size:
+                chunk_batch = int((darr[primary_dim].size - prime_slice)/chunk_size)
+                complete = True
+
+            timings = [datetime.now()]
+            ds_sub = darr.isel(**{primary_dim: slice(prime_slice, prime_slice + chunk_batch*chunk_size)})
+
+            # Append timing for numpy casting
+            timings.append(datetime.now())
+
+            ds_region = xr.Dataset(
+                {d: ds_sub[d].to_numpy() for d in ds_sub.dims})
+            ds_region[var] = xr.DataArray(da.from_array(ds_sub.to_numpy(), chunks=chunks), dims=list(chunks.keys()))
+
+            region_dict = {
+                primary_dim:slice(
+                    region_write_offset + prime_slice, 
+                    region_write_offset + prime_slice + chunk_batch*chunk_size
+                )
+            }
+            region_dict.update({d: slice(0, chunks[d]) for d in chunks.keys() if d != primary_dim})
+
+            logger.info(f'Writing region {region_dict}')
+
+            ds_region.to_zarr(
+                self.dsinfo['zarr_cache'],
+                compute=True,
+                consolidated=True,
+                zarr_format=2,
+                region=region_dict,
+                mode='r+'
+            )
+            timings.append(datetime.now())
+
+            # Next iteration, update start position
+            prime_slice += chunk_batch*chunk_size
+
+            # Increase chunk usage (if possible) or decrease as necessary
+            if self.heartbeat is not None:
+
+                max_time = max([(t - timings[0]).total_seconds() for t in timings])
+
+                # Timeout comparison formula - allows increase in chunk batch size if timeout allows
+                estm_chunk_limit = max(
+                    2, int(abs(
+                        ((self.heartbeat*0.85)-max_time)*(chunk_batch)/max_time
+                    )
+                ))/2
+
+                if max_time < self.heartbeat*0.85:
+                    batch_chunk += estm_chunk_limit
+                    if batch_chunk > max_mem_batch_chunk:
+                        batch_chunk = max_mem_batch_chunk
+                    logger.debug(f' > Increased to {batch_chunk} chunks')
+                
+                if max_time >= self.heartbeat*0.85:
+                    batch_chunk -= estm_chunk_limit
+                    logger.debug(f' > Decreased to {batch_chunk} chunks')
+
+        logger.info('All chunks written to zarr store')
+        
     def _prepare_dataset(self):
 
         self.ds = xr.open_dataset(
@@ -172,7 +318,15 @@ class RegionWorker:
         
         dslice = {}
         dcount = 0
-        for d, v in self.region_info.items():
+
+        # Tiled dataset - special case for resolving the region
+        if self.tiled:
+            for d, v in self.region_isel.items():
+                dslice[d] = slice(v['source_min'], v['source_max'])
+            return dslice
+
+        # This creates the pre-tiled slice to apply to the dataset.
+        for d, v in self.region_isel.items():
             dmin = v['source_min'] + self.coords[dcount]*v['worker_size']
             dmax = dmin + v['worker_size']
             
@@ -203,6 +357,8 @@ class RegionWorker:
 if __name__ == '__main__':
     id = sys.argv[-1]
     config = sys.argv[-2]
+
+    set_verbose(1)
 
     rw = RegionWorker(id, config)
     rw.write_data_region()
