@@ -1,6 +1,6 @@
 [project]
 name = "zarr-parallel"
-version = "0.3.2"
+version = "0.4.0"
 description = "Package for efficiently parallelising zarr write operations based on awareness of source chunks"
 authors = [
     {name = "Daniel Westwood",email = "daniel.westwood@stfc.ac.uk"}
@@ -26,5 +26,6 @@ build-backend = "poetry.core.masonry.api"
 region_write = "zarr_parallel.region:main"
 [dependency-groups]
 dev = [
-    "isort (>=7.0.0,<8.0.0)"
+    "isort (>=7.0.0,<8.0.0)",
+    "mkdocs (>=1.6.1,<2.0.0)"
 ]
