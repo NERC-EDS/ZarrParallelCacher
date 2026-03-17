@@ -35,3 +35,9 @@ The assembler will halt to recommend alternative data selections based on the un
 - Heartbeats between jobs in the dask workers.
 - Now able to shut off dask distributed info messages.
 - Added ability to add attributes
+
+### Version 0.4 Changes
+- Job parallelisation now distributed to workers for efficiency
+    - Small parallel writes were found to be inefficient, so the writes are parallelised to the largest possible selection while adhering to memory/timeout limits.
+- Tiling parallelisation now available. Caveats:
+    - Tiling necessitates rechunking to single chunk-per-tile. This means tile size may need to be smaller than expected to account for memory limitations of individual worker - specifically where source chunking scheme inflates the size of data initially retrieved. Error will be raised if the estimated memory requirement per tile is larger than the memory limit for the worker.
