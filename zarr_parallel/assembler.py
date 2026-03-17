@@ -44,14 +44,25 @@ def divide_workers(workers, weights, dims):
 
 class ZarrParallelAssembler:
 
-    def __init__(self, selector: dict, cache_label: Union[str,None] = None):
+    def __init__(
+            self,
+            data_uri: str,
+            preprocessors: Union[list,None] = None,
+            chunks: Union[dict,None] = None,
+            cache_label: Union[str,None] = None,
+            engine: str = 'kerchunk',
+            variables: Union[list,None] = None,
+            add_attrs: Union[dict,None] = None
+        ):
 
-        # Subject to change - not based on any established scheme for selectors
-        self.uri           = selector['uri']
-        self.engine        = 'kerchunk' # Discuss an option for this?
-        self.variables     = selector['variables']
-        self.transforms    = selector['common']['pre_transforms']
+        self.uri           = data_uri
+        self.engine        = engine
+        self.variables     = variables
+        self.transforms    = preprocessors
         self.dimensions = None
+
+        self.add_attrs = add_attrs
+
         for transform in self.transforms:
             if transform['type'] in ['sel','isel']:
                 self.dimensions    = dict(transform)
@@ -59,7 +70,7 @@ class ZarrParallelAssembler:
 
         if self.dimensions is None:
             raise ValueError('No selection criteria applied')
-        self.output_chunks = selector['common'].get('chunks')
+        self.output_chunks = chunks
 
         self.cache_label = cache_label or ''
 
@@ -68,6 +79,10 @@ class ZarrParallelAssembler:
 
         ds = self._native_ds()
         logger.info(f'Established connection to {self.uri}')
+
+        if variables is None:
+            # All variables
+            self.variables = {v : {} for v in ds.variables if v not in ds.dims}
 
         # Derive source chunks and determine which are sub-chunked
         self.source_chunks = {}
@@ -92,12 +107,6 @@ class ZarrParallelAssembler:
         # If the source chunks differ between variables, raise an 
         # error as this is not yet supported.
 
-    def zarr_store(self) -> str:
-        return f'{self.uri.split("/")[-1].split(".")[0]}_{"_".join(self.variables.keys())}{self.cache_label}.zarr'
-    
-    def zarr_store_path(self, cache_dir: str) -> str:
-        return f'{cache_dir}/{self.zarr_store()}'
-    
     def _native_ds(self, chunks: Union[str,dict,None] = 'auto') -> xr.Dataset:
         return xr.open_dataset(self.uri, engine=self.engine, chunks=chunks)
 
@@ -279,7 +288,6 @@ class ZarrParallelAssembler:
                 regional_transforms.append(transform)
         return regional_transforms
 
-
     def _create_empty_zarr(self, worker_config: dict):
         """
         Create empty zarr based on the first of the variable dataArrays.
@@ -295,6 +303,10 @@ class ZarrParallelAssembler:
         
         # Copy global attributes
         ds_dims_only.attrs = ds_transformed[0].attrs
+
+        if self.add_attrs is not None:
+            for k,v in self.add_attrs.items():
+                ds_dims_only[k] = v
 
         # Copy dimension encoding
         for dim in worker_dims.keys():
@@ -315,8 +327,8 @@ class ZarrParallelAssembler:
 
         encoding = {}
         for dsv in ds_transformed:
-            logger.info(f'Writing empty DataArray: {dsv}')
             var = dsv.name
+            logger.info(f'Writing empty DataArray: {var}')
             ds_dims_only[var] = xr.DataArray(empty_var, dims=list(worker_dims.keys()))
             ds_dims_only[var].attrs = dsv.attrs
 
@@ -335,7 +347,7 @@ class ZarrParallelAssembler:
 
     def _arrange_region_selector(
             self, 
-            cache_dir: str, 
+            zarr_store: str, 
             dim_spec: dict):
 
         return {
@@ -343,7 +355,7 @@ class ZarrParallelAssembler:
                 'uri': self.uri,
                 'engine': self.engine,
                 'kwargs':{},
-                'zarr_cache': self.zarr_store_path(cache_dir)
+                'zarr_cache': zarr_store
             },
             'common':{'pre_transforms': self._determine_regional_transforms()},
             'variables': self.variables,
@@ -352,7 +364,7 @@ class ZarrParallelAssembler:
 
     def cache(
             self,
-            cache_dir: Union[str,object], # Can be zarr store or Pathlike?
+            cache_store: Union[str,object], # Can be zarr store or Pathlike?
             num_jobs: Union[int,None] = None, # Number of workers per zarr store
             generate_stats: bool = False,
             deploy_mode: str = 'SLURM',
@@ -360,6 +372,7 @@ class ZarrParallelAssembler:
             simultaneous_worker_limit: int = 50,
             memory_limit: str = "2GB",
             worker_timeout: str = "30:00",
+            overwrite: bool = True
         ):
         """
         Method to cache selected data to a zarr store
@@ -367,11 +380,35 @@ class ZarrParallelAssembler:
         Will send out parallel workers and has option to wait for completion.
         """
 
+        if deploy_mode == 'series':
+            ds_transformed = self._obtain_ds()
+            self.logger.info('Writing unparallelised dataset')
+            for ds in ds_transformed:
+
+                ds.chunk(self.output_chunks)
+
+                ds.to_zarr(
+                    zarr_store, 
+                    compute=True,
+                    zarr_format=2, 
+                    consolidated=True,
+                    write_empty_chunks=True,
+                    mode='w')
+            return
+
         if num_jobs is None:
             num_jobs = self._determine_num_jobs(memory_limit)
 
-        if os.path.isdir(self.zarr_store_path(cache_dir)):
-            os.system(f'rm -rf {self.zarr_store_path(cache_dir)}')
+        cache_dir = '/'.join(cache_store.split('/')[:-1])
+        zarr_store = cache_store.split('/')[-1]
+
+        # Handle overwriting existing store
+        if os.path.isdir(cache_store):
+            if overwrite:
+                os.system(f'rm -rf {cache_store}')
+            else:
+                raise ValueError()
+
         if not os.path.isdir(f'{cache_dir}/temp'):
             os.makedirs(f'{cache_dir}/temp')
 
@@ -382,11 +419,11 @@ class ZarrParallelAssembler:
         logger.info(f'Requested workers: {num_jobs}')
         logger.info(f'Actual workers: {actual_workers} (Chunk limitations)')
 
-        worker_config = self._arrange_region_selector(cache_dir, dim_spec)
+        worker_config = self._arrange_region_selector(zarr_store=cache_store, dim_spec=dim_spec)
 
         chunks = {d: min(v['cache_size'],v['worker_size']) for d, v in worker_config['region_info'].items()}
 
-        worker_config_file = self.zarr_store_path(cache_dir).replace('zarr_cache','zarr_cache/temp') + '.json'
+        worker_config_file = f'{cache_dir}/temp/{zarr_store}.temp.json'
 
         with open(worker_config_file,'w') as f:
             json.dump(worker_config, f)
@@ -398,7 +435,7 @@ class ZarrParallelAssembler:
 
                 status = configure_slurm_deployment(
                     cache_dir,
-                    self.zarr_store(),
+                    zarr_store,
                     worker_config_file,
                     actual_workers,
                     simultaneous_worker_limit=simultaneous_worker_limit,
@@ -421,69 +458,5 @@ class ZarrParallelAssembler:
                     threads_per_worker=1
                 )
 
-            case 'series':
-                # Serial cacher for very small datasets.
-                ds_transformed = self._obtain_ds()
-                for ds in ds_transformed:
-
-                    ds.chunk(chunks)
-
-                    ds.to_zarr(
-                        self.zarr_store_path(cache_dir), 
-                        compute=True,
-                        zarr_format=2, 
-                        consolidated=True,
-                        write_empty_chunks=True,
-                        mode='w')
-                
-                status = True
-
         if not status:
             raise ValueError
-
-if __name__ == '__main__':
-    selectors= [
-            {   
-                "uri": "https://gws-access.jasmin.ac.uk/public/eds_ai/era5_repack/aggregations/data/ecmwf-era5X_oper_an_sfc_2000_2020_2d_repack.kr1.0.json",
-                "common": {
-                    "pre_transforms": [
-                        {"type": "reverse_axis", "dim": "latitude"},
-                        #{"type": "roll", "dim": "longitude", "shifts": None}, # Roll required BEFORE subsetting
-                        {"type": "sel", "time": ["2000-03-02 00:00:00", "2005-01-10 23:00:00"], "latitude": [60, 67.8], "longitude": [10, 137.8]},
-                        # xarray-based transformations SHOULDN'T affect the region arrangements.
-                    ],
-                    "pre_transform_rule": "append",  # or "override" to replace common pre-transforms with variable-specific ones
-                    "chunks": {"time": 48},  # Example chunking strategy, can be adjusted as needed,
-                },
-                "variables": {
-                    "d2m": [
-                        {"type": "rename", "new_name_or_name_dict":"dewpoint_temperature"},
-                    ],
-                }
-            },
-            {   
-                "uri": "https://gws-access.jasmin.ac.uk/public/eds_ai/era5_repack/aggregations/data/ecmwf-era5X_oper_an_sfc_2000_2020_2t_repack.kr1.0.json",
-                "common": {
-                    "subset": {
-                        "time": ["2005-01-01 11:00:00", "2008-01-10 23:00:00"],
-                        "latitude": [60, -67.8],
-                        "longitude": [10, 137.8]
-                    },
-                    "pre_transforms": [
-                        {"type": "rename", "var_id": "t2m", "new_name": "surface_temperature"},
-                        {"type": "roll", "dim": "longitude", "shift": None},
-                        {"type": "reverse_axis", "dim": "latitude"}
-                    ],
-                    "pre_transform_rule": "append",  # or "override" to replace common pre-transforms with variable-specific ones
-                    "chunks": {"time": 48}  # Example chunking strategy, can be adjusted as needed
-                },
-                "variables": {
-                    "t2m": {},
-                }
-            }]
-    
-    set_verbose(1)
-    os.environ['ZP_LOG_LEVEL'] = '1'
-    
-    zp = ZarrParallelAssembler(selector=selectors[0], cache_label='v4')
-    zp.cache(cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache',deploy_mode='dask_distributed',simultaneous_worker_limit=8)
