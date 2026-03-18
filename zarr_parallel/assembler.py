@@ -449,7 +449,7 @@ class ZarrParallelAssembler:
 
         worker_dims = worker_config['region_info']['dims']
         # worker_scalars = worker_config['region_info']['scalars']
-        default_coords = worker_config['region_info'].get('coords')
+        default_coords = worker_config['region_info'].get('coords',[])
 
         # Dimensions of the tiled or un-tiled dataset (configured above)
         data_vars = {d: ds_transformed[0][d] for d in worker_dims.keys()}
