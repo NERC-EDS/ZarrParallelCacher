@@ -156,8 +156,8 @@ class ZarrParallelAssembler:
         
         elif chunks == 'auto':
             self.output_chunks = self.source_chunks
-
-        self.output_chunks = chunks
+        else:
+            self.output_chunks = chunks
 
     def _recommend_tiling(self, ds: xr.Dataset):
         """
