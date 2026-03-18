@@ -181,6 +181,7 @@ class RegionWorker:
             force_rechunk = chunks != {} and chunks != self.source_chunks
             if not force_rechunk and not self.heartbeat and not start_from and not self.tiled:
                 # Write the whole region to the zarr cache
+                import pdb; pdb.set_trace()
                 darr.to_zarr(
                     self.dsinfo['zarr_cache'], 
                     zarr_format=2, 
@@ -315,7 +316,7 @@ class RegionWorker:
         self.ds = xr.open_dataset(
             self.dsinfo['uri'],
             engine=self.dsinfo['engine'],
-            chunks={},
+            chunks='auto',
             **self.dsinfo.get('kwargs',{})
         )
 

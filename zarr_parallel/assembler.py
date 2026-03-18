@@ -436,7 +436,7 @@ class ZarrParallelAssembler:
         
         output_chunks = {}
         for dim in self.dimensions.keys():
-            output_chunks[dim] = self.output_chunks.get(dim,None) or self.source_chunks[dim]
+            output_chunks[dim] = self.output_chunks.get(dim,None) or min(self.source_chunks[dim], self.dim_spec[dim]['total_region'])
 
         return output_chunks
  
