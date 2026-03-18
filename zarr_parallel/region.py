@@ -63,8 +63,7 @@ class RegionWorker:
         self.fine_dims   = content['region_info'].get('fine_dims',{})
         self.source_dims = list(self.region_isel.keys())
 
-        if list(self.parallelisable_dims.keys()) != self.source_dims:
-            self.tiled = True
+        self.tiled = list(self.parallelisable_dims.keys()) != self.source_dims
 
         self.source_chunks = content['source_chunks']
         self.output_chunks = content['output_chunks']
