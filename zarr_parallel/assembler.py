@@ -71,6 +71,7 @@ class ZarrParallelAssembler:
         self.dimensions      = None
         self.output_chunks   = None
         self.batch_dim_worker_size = None
+        self.global_attrs    = None
 
         self.source_chunks = None
         self.chunked_dims = None
@@ -89,6 +90,7 @@ class ZarrParallelAssembler:
         ### 0. Establish connection to source endpoint
 
         ds = self._native_ds()
+        self.global_attrs = ds.attrs
         logger.info(f'Established connection to {self.uri}')
 
         ### 1. Interpret transforms
@@ -460,7 +462,8 @@ class ZarrParallelAssembler:
         ds_dims_only = xr.Dataset(data_vars=data_vars)
         
         # Copy global attributes
-        ds_dims_only.attrs = ds_transformed[0].attrs
+        if self.global_attrs is not None:
+            ds_dims_only.attrs = self.global_attrs
 
         if self.add_attrs is not None:
             for k,v in self.add_attrs.items():
