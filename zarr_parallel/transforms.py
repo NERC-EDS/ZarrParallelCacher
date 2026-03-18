@@ -238,7 +238,7 @@ def apply_transforms(
 
                 # Transform sel to slice before applying.
                 for k, v in transform.items():
-                    if isinstance(v,list):
+                    if isinstance(v,list) or isinstance(v,tuple):
                         if len(v) == 3:
                             transform[k] = slice(v[0],v[1],v[2])
                         else:
