@@ -578,14 +578,14 @@ class ZarrParallelAssembler:
         """
 
         if deploy_mode == 'series':
-            self.logger.info('Writing unparallelised dataset')
+            logger.info('Writing unparallelised dataset')
             self._transform_ds()
             for ds in self._ds:
 
-                ds.chunk(self._output_chunks)
+                ds.chunk(self._output_chunks())
 
                 ds.to_zarr(
-                    zarr_store, 
+                    cache_store, 
                     compute=True,
                     zarr_format=2, 
                     consolidated=True,
