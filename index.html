@@ -55,6 +55,18 @@
             
             <li class="nav-item" data-bs-level="1"><a href="#zarrparallelcacher" class="nav-link">ZarrParallelCacher</a>
               <ul class="nav flex-column">
+            <li class="nav-item" data-bs-level="2"><a href="#basic-usage" class="nav-link">Basic Usage</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#transformspreprocessors" class="nav-link">Transforms/Preprocessors</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#selection-recommendations" class="nav-link">Selection Recommendations</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
               </ul>
             </li>
         </ul>
@@ -63,7 +75,28 @@
                     <div class="col-md-9" role="main">
 
 <h1 id="zarrparallelcacher">ZarrParallelCacher</h1>
-<p>This package has been developed as part of the NERC EDS FRAME-FM AI project. It has been separated into its own module for ease of reusability across multiple projects. AI-specific steps may form part of the package, but may also be disabled by default.</p></div>
+<p>This package has been developed as part of the NERC EDS FRAME-FM AI project. It has been separated into its own module for ease of reusability across multiple projects. AI-specific steps may form part of the package, but may also be disabled by default.</p>
+<h2 id="basic-usage">Basic Usage</h2>
+<pre><code>from zarr_parallel.assembler import ZarrParallelAssembler
+
+zp = ZarrParallelAssembler(data_uri=uri, preprocessors=preprocessors,
+            chunks=chunks,
+            engine='kerchunk',
+            variables={'d2m':{}}, 
+            cache_label='_v1')
+
+zp.cache(
+    cache_dir='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache',
+    deploy_mode='dask_distributed',
+    simultaneous_worker_limit=4)
+</code></pre>
+<p>The above code snippet demonstrates the use of this package. The <code>data_uri</code> and <code>engine</code> parameters refer to the xarray <code>open_dataset</code> method for accessing the source object. <code>chunks</code> are required to specify the output chunking in the zarr cache, which is also required for organising the parallel jobs. <code>variables</code> is optional to add, and includes the ability to run transforms on specific data arrays (such as renaming) which are applied individually.</p>
+<p>The <code>preprocessors</code> list defines the set of preprocessing transforms to apply to the dataset (including selection) at the point of caching. This should include all transforms that should be applied to the dataset before writing to the zarr cache.</p>
+<p>The <code>num_jobs</code> and <code>simultaneous_worker_limit</code> parameters are used to configure for parallel deployment. If no <code>num_jobs</code> is provided, the assembler will calculate the optimal number of jobs for your memory limit (recommended). The default memory limit is 2GB and the timeout is set at 30 minutes, although this only applies to SLURM deployments at present.</p>
+<h2 id="transformspreprocessors">Transforms/Preprocessors</h2>
+<p>Transformations to the data may be specified via the selector option passed in the above example. Xarray-native transformations are supported, as well as transforms from the FRAME-FM package if installed.</p>
+<h2 id="selection-recommendations">Selection Recommendations</h2>
+<p>The assembler will halt to recommend alternative data selections based on the underlying chunk structure. Proceeding without recommendations is not advised, as mismatched chunk-region borders may involve duplicating chunk requests and significantly increasing memory requirements per worker.</p></div>
             </div>
         </div>
 
@@ -145,5 +178,5 @@
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-17 17:11:54.955610+00:00
+Build Date UTC : 2026-03-18 09:59:30.367400+00:00
 -->
