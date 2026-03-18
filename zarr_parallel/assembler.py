@@ -153,6 +153,10 @@ class ZarrParallelAssembler:
 
         if isinstance(chunks, str) and chunks != 'auto':
             raise ValueError('Unsupported chunking scheme. Provide a dict of "{dim:chunk_size}" or use "auto" to keep source chunking')
+        
+        elif chunks == 'auto':
+            self.output_chunks = self.source_chunks
+
         self.output_chunks = chunks
 
     def _recommend_tiling(self, ds: xr.Dataset):
