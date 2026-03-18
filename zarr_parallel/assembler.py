@@ -72,6 +72,7 @@ class ZarrParallelAssembler:
         self.output_chunks   = None
         self.batch_dim_worker_size = None
         self.global_attrs    = None
+        self.dim_spec        = None
 
         self.source_chunks = None
         self.chunked_dims = None
@@ -156,10 +157,7 @@ class ZarrParallelAssembler:
         if isinstance(chunks, str) and chunks != 'auto':
             raise ValueError('Unsupported chunking scheme. Provide a dict of "{dim:chunk_size}" or use "auto" to keep source chunking')
         
-        elif chunks == 'auto':
-            self.output_chunks = self.source_chunks
-        else:
-            self.output_chunks = chunks
+        self.output_chunks = chunks
 
     def _recommend_tiling(self, ds: xr.Dataset):
         """
@@ -323,7 +321,7 @@ class ZarrParallelAssembler:
 
             # Should be doing this per var?
             source_chunks = self.source_chunks[dim]
-            output_chunks = self.output_chunks.get(dim, source_chunks)
+            output_chunks = self._output_chunks().get(dim, source_chunks)
 
             min_region = math.lcm(int(output_chunks), int(source_chunks))
 
@@ -436,7 +434,16 @@ class ZarrParallelAssembler:
         
         output_chunks = {}
         for dim in self.dimensions.keys():
-            output_chunks[dim] = self.output_chunks.get(dim,None) or min(self.source_chunks[dim], self.dim_spec[dim]['total_region'])
+
+            dim_limit=1e9
+            if self.dim_spec is not None:
+                dim_limit = self.dim_spec[dim]['total_region']
+
+            output_chunk = None
+            if isinstance(self.output_chunks, dict):
+                output_chunk = self.output_chunks.get(dim,None)
+
+            output_chunks[dim] = output_chunk or min(self.source_chunks[dim], dim_limit)
 
         return output_chunks
  
@@ -575,7 +582,7 @@ class ZarrParallelAssembler:
             self._transform_ds()
             for ds in self._ds:
 
-                ds.chunk(self.output_chunks)
+                ds.chunk(self._output_chunks)
 
                 ds.to_zarr(
                     zarr_store, 
