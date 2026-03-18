@@ -49,7 +49,7 @@ class ZarrParallelAssembler:
             self,
             data_uri: str,
             preprocessors: Union[list,None] = None,
-            chunks: Union[dict,None] = None,
+            chunks: Union[dict,str,None] = None,
             cache_label: Union[str,None] = None,
             engine: str = 'kerchunk',
             variables: Union[list,None] = None,
@@ -59,63 +59,101 @@ class ZarrParallelAssembler:
         self.uri           = data_uri
         self.engine        = engine
         self.variables     = variables
-        self.transforms    = preprocessors
-        self.dimensions = None
         self.recommendations = {}
+        self.cache_label = cache_label or ''
 
         self.add_attrs = add_attrs
 
-        self.reconfigure = None
+        # Future properties
+        self.reconfigure     = None
         self.tiler_transform = None
+        self._ds             = None
+        self.dimensions      = None
+        self.output_chunks   = None
+        self.batch_dim_worker_size = None
+
+        self.source_chunks = None
+        self.chunked_dims = None
+        
+        self._interpret_params(transforms=preprocessors, chunks=chunks)
+
+    def _interpret_params(
+            self, 
+            transforms: Union[list,None] = None, 
+            chunks: Union[dict,str,None] = None
+           ) -> list:
+        """
+        Interpret the transforms to determine the dimensions, source chunks and other information required for tiling and selection arrangements.
+        """
+
+        ### 0. Establish connection to source endpoint
+
+        ds = self._native_ds()
+        logger.info(f'Established connection to {self.uri}')
+
+        ### 1. Interpret transforms
+        self.transforms = transforms or []
+        var_mapping = {}
+
+        subset = False
         for transform in self.transforms:
+            if transform['type'] == 'subset':
+                transform['type'] = 'sel'
             if transform['type'] in ['sel','isel']:
                 self.dimensions    = dict(transform)
                 self.dimensions.pop('type')
+                subset = True
+
             if transform['type'] == 'tiled':
                 self.reconfigure = 'tiled'
                 self.tiler_transform = copy.deepcopy(transform)
                 self.tiler_transform.pop('type')
 
-        if self.dimensions is None:
-            raise ValueError('No selection criteria applied')
-        self.output_chunks = chunks
+            if transform['type'] == 'rename':
+                var_mapping[transform['var_id']] = transform['new_name']
+                
+        if not subset:
+            self.dimensions = {d: [0, len(ds[d])] for d in ds.dims}
+            self.transforms.append({'type':'isel', **self.dimensions})
 
-        self.cache_label = cache_label or ''
+        ### 2. Collect all variables if not specified, including renamed ones.
+        if self.variables is None:
+            self.variables = {}
+            for v in ds.variables:
+                if v in ds.dims:
+                    continue
+                if v in var_mapping:
+                    self.variables[var_mapping[v]] = {}
+                else:
+                    self.variables[v] = {}
 
-        # Derived properties
-        self._ds = None
-
-        ds = self._native_ds()
-        logger.info(f'Established connection to {self.uri}')
-
-        if variables is None:
-            # All variables
-            self.variables = {v : {} for v in ds.variables if v not in ds.dims}
-
-        # Derive source chunks and determine which are sub-chunked
-        self.source_chunks = {}
-        self.chunked_dims = {}
+        ### 3. Derive source chunks and determine which are sub-chunked
+        chunked_dims = {}
         for var in self.variables.keys():
-            # Currently ignores different chunk structures between variables
-            # Assumes chunk structures are the same for all variables in this selector.
-
-            self.source_chunks = {}
-            self.chunked_dims[var] = []
+            source_chunks = {}
+            chunked_dims[var] = []
             for dx, chunkset in enumerate(ds[var].chunks):
                 dim = ds[var].dims[dx]
-                self.source_chunks[dim] = chunkset[0]
+                source_chunks[dim] = chunkset[0]
                 if len(chunkset) > 1:
-                    self.chunked_dims[var].append(dim)
+                    chunked_dims[var].append(dim)
 
-        self.batch_dim_worker_size = None
+            if self.source_chunks is None:
+                self.source_chunks = source_chunks
+            
+            if self.source_chunks != source_chunks:
+                raise ValueError('Parallel caching not supported for different structures within the same zarr store')
 
-        chunked_dims = set([tuple(c) for c in self.chunked_dims.values()])
+        chunked_dims = set([tuple(c) for c in chunked_dims.values()])
         if len(chunked_dims) > 1:
             raise ValueError('Parallel caching not supported for different structures within the same zarr store')
         self.chunked_dims = list(chunked_dims)[0]
 
-        # If the source chunks differ between variables, raise an 
-        # error as this is not yet supported.
+        ### 4. Interpret final chunks if needed.
+
+        if isinstance(chunks, str) and chunks != 'auto':
+            raise ValueError('Unsupported chunking scheme. Provide a dict of "{dim:chunk_size}" or use "auto" to keep source chunking')
+        self.output_chunks = chunks
 
     def _recommend_tiling(self, ds: xr.Dataset):
         """
@@ -203,55 +241,55 @@ class ZarrParallelAssembler:
             self.dim_spec   = transformed['dim_spec']
             self.recommendations['sel'] = transformed['recommendations']['sel']
     
-    def _determine_num_jobs(self, memory_limit: str) -> int:
-        """
-        Determine the number of jobs given the memory limit
+    # def _determine_num_jobs(self, memory_limit: str) -> int:
+    #     """
+    #     Determine the number of jobs given the memory limit
 
-        Unused function, as it has been determined that jobs should
-        be split at the worker-level and not at this higher level. This
-        reduces overheads with setting up small parallel-writes as separate jobs.
+    #     Unused function, as it has been determined that jobs should
+    #     be split at the worker-level and not at this higher level. This
+    #     reduces overheads with setting up small parallel-writes as separate jobs.
 
-        """
+    #     """
         
-        mem = interpret_mem_limit(memory_limit)/16
+    #     mem = interpret_mem_limit(memory_limit)/16
         
-        # Increase number of minimal_arrays by 1 until memory limit is reached
-        # total_array / (minimal_array*n_arrays) gives the optimal number of workers
+    #     # Increase number of minimal_arrays by 1 until memory limit is reached
+    #     # total_array / (minimal_array*n_arrays) gives the optimal number of workers
         
-        min_arr, total_arr = [],[]
-        for dim in self.dimensions.keys():
-            minimal = 0
-            total = 0
-            source_chunk = self.source_chunks[dim]
-            output_chunk = self.output_chunks.get(dim,source_chunk)
+    #     min_arr, total_arr = [],[]
+    #     for dim in self.dimensions.keys():
+    #         minimal = 0
+    #         total = 0
+    #         source_chunk = self.source_chunks[dim]
+    #         output_chunk = self.output_chunks.get(dim,source_chunk)
 
-            min_region = math.lcm(int(output_chunk), int(source_chunk))
-            position = 0
-            beyond = False
-            while not beyond:
-                if position + source_chunk > self.offsets[dim] and position < self.array_ends[dim]:
-                    total += source_chunk
-                if position < min_region:
-                    minimal += source_chunk
-                if position - source_chunk > self.array_ends[dim]:
-                    beyond = True
-                position += source_chunk
-            min_arr.append(minimal)
-            total_arr.append(total)
+    #         min_region = math.lcm(int(output_chunk), int(source_chunk))
+    #         position = 0
+    #         beyond = False
+    #         while not beyond:
+    #             if position + source_chunk > self.offsets[dim] and position < self.array_ends[dim]:
+    #                 total += source_chunk
+    #             if position < min_region:
+    #                 minimal += source_chunk
+    #             if position - source_chunk > self.array_ends[dim]:
+    #                 beyond = True
+    #             position += source_chunk
+    #         min_arr.append(minimal)
+    #         total_arr.append(total)
             
-        # Compare minimum region size with total selection size to find num jobs
-        min_size = math.prod(min_arr)
-        tot_size = math.prod(total_arr)
+    #     # Compare minimum region size with total selection size to find num jobs
+    #     min_size = math.prod(min_arr)
+    #     tot_size = math.prod(total_arr)
 
-        regions_per_job = math.floor(mem/min_size)
+    #     regions_per_job = math.floor(mem/min_size)
 
-        njobs = math.ceil(tot_size/(min_size*regions_per_job))
+    #     njobs = math.ceil(tot_size/(min_size*regions_per_job))
 
-        logger.info(f'Dividing into {njobs} jobs for job memory limit {memory_limit}')
+    #     logger.info(f'Dividing into {njobs} jobs for job memory limit {memory_limit}')
 
-        # New setup - parallelise 
+    #     # New setup - parallelise 
 
-        return njobs
+    #     return njobs
     
     def _determine_worker_arrangements(self, num_workers: int) -> tuple:
         """
@@ -346,10 +384,6 @@ class ZarrParallelAssembler:
                 # Limit number of workers given limiting batch dim worker size
                 if len(ds.batch_dim)/self.batch_dim_worker_size < num_workers:
                     actual_workers =  int(len(ds.batch_dim)/self.batch_dim_worker_size)
-
-                if math.prod(self.tiler_transform.values())*self.batch_dim_worker_size > interpret_mem_limit(memory_limit)/2:
-                    # Default to 1 if it looks like the tiling scheme will produce very large tiles that may cause memory issues for workers.
-                    self.batch_dim_worker_size = 1
 
                 batch_dim = {
                     'batch_dim':{
@@ -520,7 +554,8 @@ class ZarrParallelAssembler:
             memory_limit: str = "2GB",
             worker_timeout: str = "30:00",
             overwrite: bool = True,
-            recommend_changes: bool = True
+            recommend_changes: bool = True,
+            resume: bool = False,
         ):
         """
         Method to cache selected data to a zarr store
@@ -549,51 +584,56 @@ class ZarrParallelAssembler:
 
         cache_dir = '/'.join(cache_store.split('/')[:-1])
         zarr_store = cache_store.split('/')[-1]
-
-        # Handle overwriting existing store
-        if os.path.isdir(cache_store):
-            if overwrite:
-                os.system(f'rm -rf {cache_store}')
-            else:
-                raise ValueError()
-
-        if not os.path.isdir(f'{cache_dir}/temp'):
-            os.makedirs(f'{cache_dir}/temp')
-
-        if self.reconfigure:
-            self._recommend_tiling(self._native_ds())
-
-        # Perform transformations
-        self._transform_ds()
-
-        if recommend_changes:
-            self._display_recommendations()
-
-        actual_workers = self._determine_worker_arrangements(num_jobs)
-
-        if self.reconfigure:
-            # Tiled datasets
-            worker_config = self._arrange_region_selector(zarr_store=cache_store, memory_limit=memory_limit)
-            worker_config['region_info'], actual_workers = self._reconfigure_regions(num_jobs, memory_limit=memory_limit)
-            worker_config['region_info']['region_isel'] = self.dim_spec
-        else:
-            worker_config = self._arrange_region_selector(zarr_store=cache_store, dim_spec=self.dim_spec, memory_limit=memory_limit)
-
-        if actual_workers != num_jobs:
-            logger.info(f'Requested job split: {num_jobs} jobs')
-            logger.info(f'Actual job split: {actual_workers} jobs (Chunk/Tile limitations)')
-
-        chunks = self._output_chunks()
-
         worker_config_file = f'{cache_dir}/temp/{zarr_store}.temp.json'
 
-        with open(worker_config_file,'w') as f:
-            json.dump(worker_config, f)
+        if not resume:
+
+            # Handle overwriting existing store
+            if os.path.isdir(cache_store):
+                if overwrite:
+                    os.system(f'rm -rf {cache_store}')
+                else:
+                    raise ValueError()
+
+            if not os.path.isdir(f'{cache_dir}/temp'):
+                os.makedirs(f'{cache_dir}/temp')
+
+            if self.reconfigure:
+                self._recommend_tiling(self._native_ds())
+
+            # Perform transformations
+            self._transform_ds()
+
+            if recommend_changes:
+                self._display_recommendations()
+
+            actual_workers = self._determine_worker_arrangements(num_jobs)
+
+            if self.reconfigure:
+                # Tiled datasets
+                worker_config = self._arrange_region_selector(zarr_store=cache_store, memory_limit=memory_limit)
+                worker_config['region_info'], actual_workers = self._reconfigure_regions(num_jobs, memory_limit=memory_limit)
+                worker_config['region_info']['region_isel'] = self.dim_spec
+            else:
+                worker_config = self._arrange_region_selector(zarr_store=cache_store, dim_spec=self.dim_spec, memory_limit=memory_limit)
+
+            if actual_workers != num_jobs:
+                logger.info(f'Requested job split: {num_jobs} jobs')
+                logger.info(f'Actual job split: {actual_workers} jobs (Chunk/Tile limitations)')
+
+            chunks = self._output_chunks()
+
+            with open(worker_config_file,'w') as f:
+                json.dump(worker_config, f)
+
+            self._create_empty_zarr(worker_config)
+
+        else:
+            actual_workers = simultaneous_worker_limit
+            logger.info(f'Resuming with {actual_workers} workers')
 
         match deploy_mode:
             case 'SLURM':
-
-                self._create_empty_zarr(worker_config)
 
                 status = configure_slurm_deployment(
                     cache_dir,
@@ -607,8 +647,6 @@ class ZarrParallelAssembler:
                     chunks=chunks
                 )
             case 'dask_distributed':
-
-                self._create_empty_zarr(worker_config)
                 
                 # Cluster workers set via limit
                 # Number of jobs is now number of traditional workers

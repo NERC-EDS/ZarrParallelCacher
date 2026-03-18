@@ -127,19 +127,29 @@ class RegionWorker:
 
         return region
 
-    def start_from(self, var):
+    def start_from(self, var: str, ndims: int, chunks: dict) -> int:
         """
         Detect past progress on writing the zarr store
         
         Limitation: Primary chunk dimension must be the first dimension.
         """
 
-        chunk_id = 0
-        while os.path.isfile(
-            f"{self.dsinfo['zarr_cache']}/{var}/{chunk_id}.0.0"
-        ):
+        trailing_zeros = '.'.join(["0" for x in range(ndims-1)])
+
+        primary_dim = list(self.parallelisable_dims.keys())[0]
+        chunk_id    = self.coords[0] * self.parallelisable_dims[primary_dim]['worker_size']
+
+        file = f"{self.dsinfo['zarr_cache']}/{var}/{chunk_id}." + trailing_zeros
+        while os.path.isfile(file):
+            file = f"{self.dsinfo['zarr_cache']}/{var}/{chunk_id}." + trailing_zeros
+            logger.debug(f"Locating {self.dsinfo['zarr_cache']}/{var}/{chunk_id}." + trailing_zeros)
             chunk_id += 1
-        return chunk_id
+
+        if chunk_id > self.coords[0] * self.parallelisable_dims[primary_dim]['worker_size']:
+            logger.info(f"Resuming from chunk ID: {chunk_id}")
+        else:
+            logger.info(f"Starting from chunk ID: {chunk_id}")
+        return chunk_id - (self.coords[0] * self.parallelisable_dims[primary_dim]['worker_size'])
     
     def write_data_region(self):
 
@@ -167,7 +177,7 @@ class RegionWorker:
 
             # heartbeat required - split into sections 
             # chunking required - split into sections
-            start_from = self.start_from(var)
+            start_from = self.start_from(var, len(darr.dims), chunks)
 
             force_rechunk = chunks != {} and chunks != self.source_chunks
             if not force_rechunk and not self.heartbeat and not start_from and not self.tiled:
@@ -199,7 +209,7 @@ class RegionWorker:
         # - Split chunk writes require max number of chunks per-write that fit within limits
 
         primary_dim = list(self.parallelisable_dims.keys())[0]
-        prime_slice = start_from*chunks[primary_dim]
+        prime_slice = start_from
         chunk_size = chunks[primary_dim]
 
         memory_limit_bytes = 0.85 * interpret_mem_limit(self.memory_limit)
@@ -231,6 +241,8 @@ class RegionWorker:
                 f'Limit: {self.memory_limit}, Approx Required: {mem_chunks*8/1e6 :.2f} MB')
 
         chunk_batch = int(max_mem_batch_chunk)
+
+        logger.info(f'Balancing chunk writes for {int(darr[primary_dim].size/(chunk_batch*chunk_size)) - start_from} chunks')
 
         complete = False
         while not complete:
@@ -358,7 +370,7 @@ if __name__ == '__main__':
     id = sys.argv[-1]
     config = sys.argv[-2]
 
-    set_verbose(1)
+    set_verbose(2)
 
     rw = RegionWorker(id, config)
     rw.write_data_region()
