@@ -244,6 +244,8 @@ def apply_transforms(
                         else:
                             transform[k] = slice(v[0],v[1])
 
+            transform['type'] = transform_type
+
             ds = getattr(ds, transform_type)(**transform)
         elif transform_type == 'region_isel' and region_transform is not None:
             ds = ds.isel(**region_transform)
