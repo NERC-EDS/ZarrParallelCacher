@@ -468,13 +468,7 @@ class ZarrParallelAssembler:
 
         ds_dims_only = xr.Dataset(data_vars=data_vars)
         
-        # Copy global attributes
-        if self.global_attrs is not None:
-            ds_dims_only.attrs = self.global_attrs
-
-        if self.add_attrs is not None:
-            for k,v in self.add_attrs.items():
-                ds_dims_only.attrs[k] = v
+        ds_dims_only = self._override_global_attrs(ds_dims_only)
 
         # Copy dimension encoding
         for dim in data_vars.keys():
@@ -557,6 +551,21 @@ class ZarrParallelAssembler:
             'memory_limit': memory_limit
         }
 
+    def _override_global_attrs(self, ds: xr.Dataset) -> xr.Dataset:
+        """
+        Copy saved global attributes into new dataset, plus added attributes.
+        """
+
+        # Copy global attributes
+        if self.global_attrs is not None:
+            ds.attrs = self.global_attrs
+
+        if self.add_attrs is not None:
+            for k,v in self.add_attrs.items():
+                ds.attrs[k] = v
+
+        return ds
+
     def cache(
             self,
             cache_store: Union[str,object], # Can be zarr store or Pathlike?
@@ -575,6 +584,8 @@ class ZarrParallelAssembler:
         Method to cache selected data to a zarr store
         
         Will send out parallel workers and has option to wait for completion.
+
+        :param generate_stats: bool. Not currently implemented. Option to generate stats on the caching process, such as time taken, memory used etc.
         """
 
         if deploy_mode == 'series':
@@ -583,6 +594,8 @@ class ZarrParallelAssembler:
             for ds in self._ds:
 
                 ds.chunk(self._output_chunks())
+
+                ds = self._override_global_attrs(ds)
 
                 ds.to_zarr(
                     cache_store, 

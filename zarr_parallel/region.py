@@ -136,7 +136,9 @@ class RegionWorker:
         trailing_zeros = '.'.join(["0" for x in range(ndims-1)])
 
         primary_dim = list(self.parallelisable_dims.keys())[0]
-        chunk_id    = self.coords[0] * self.parallelisable_dims[primary_dim]['worker_size']
+
+        zero_chunk = self.parallelisable_dims[primary_dim]['worker_size']/self.parallelisable_dims[primary_dim]['cache_size']
+        chunk_id    = self.coords[0] * zero_chunk
 
         file = f"{self.dsinfo['zarr_cache']}/{var}/{chunk_id}." + trailing_zeros
         while os.path.isfile(file):
@@ -144,11 +146,11 @@ class RegionWorker:
             logger.debug(f"Locating {self.dsinfo['zarr_cache']}/{var}/{chunk_id}." + trailing_zeros)
             chunk_id += 1
 
-        if chunk_id > self.coords[0] * self.parallelisable_dims[primary_dim]['worker_size']:
+        if chunk_id > zero_chunk:
             logger.info(f"Resuming from chunk ID: {chunk_id}")
         else:
             logger.info(f"Starting from chunk ID: {chunk_id}")
-        return chunk_id - (self.coords[0] * self.parallelisable_dims[primary_dim]['worker_size'])
+        return chunk_id - zero_chunk
     
     def write_data_region(self):
 
@@ -208,14 +210,15 @@ class RegionWorker:
         # - Dask workers invoke heartbeat - balance timeout up to limit
         # - Split chunk writes require max number of chunks per-write that fit within limits
 
-        primary_dim = list(self.parallelisable_dims.keys())[0]
-        prime_slice = start_from
-        chunk_size = chunks[primary_dim]
+        primary_dim   = list(self.parallelisable_dims.keys())[0]
+        chunk_size    = chunks[primary_dim]
+        prime_slice   = 0
 
-        memory_limit_bytes = 0.85 * interpret_mem_limit(self.memory_limit)
-
+        # Byte limit for memory
+        memory_limit_bytes  = 0.85 * interpret_mem_limit(self.memory_limit)
+        # Chunk limit based on memory
         max_mem_batch_chunk = math.floor(memory_limit_bytes / (math.prod(chunks.values()) * 8))
-
+        # Offset to write region into parallel dataset
         region_write_offset = self.coords[0]*self.parallelisable_dims[primary_dim]['worker_size']
 
         # Limitation: Tiled datasets will always result in 1-1 tile-chunking
@@ -242,37 +245,50 @@ class RegionWorker:
 
         chunk_batch = int(max_mem_batch_chunk)
 
-        logger.info(f'Balancing chunk writes for {int(darr[primary_dim].size/(chunk_batch*chunk_size)) - start_from} chunks')
+        # Number of chunks to write
+        nchunks     = math.ceil(darr[primary_dim].size/chunk_size)
+
+        logger.info(f'Balancing chunk writes for {nchunks} chunks')
 
         complete = False
         while not complete:
 
             timings = []
 
+            # Recalculate limits for chunk batch.
+            prime_slice_lim = int(prime_slice + chunk_batch*chunk_size)
             # Handle final case + overflowing chunk batch request size
-            if prime_slice + chunk_batch*chunk_size > darr[primary_dim].size:
+            if prime_slice_lim > darr[primary_dim].size:
+
                 chunk_batch = int((darr[primary_dim].size - prime_slice)/chunk_size)
+                prime_slice_lim = int(darr[primary_dim].size)
                 complete = True
 
             timings = [datetime.now()]
-            ds_sub = darr.isel(**{primary_dim: slice(prime_slice, prime_slice + chunk_batch*chunk_size)})
+            ds_sub = darr.isel(**{primary_dim: slice(prime_slice, prime_slice_lim)}).compute()
 
             # Append timing for numpy casting
             timings.append(datetime.now())
 
             ds_region = xr.Dataset(
                 {d: ds_sub[d].to_numpy() for d in ds_sub.dims})
-            ds_region[var] = xr.DataArray(da.from_array(ds_sub.to_numpy(), chunks=chunks), dims=list(chunks.keys()))
+            
+            dask_chunks = tuple([chunks[d] for d in chunks.keys()])
+            ds_region[var] = xr.DataArray(da.from_array(ds_sub.to_numpy(), chunks=dask_chunks), dims=list(chunks.keys()))
 
             region_dict = {
                 primary_dim:slice(
                     region_write_offset + prime_slice, 
-                    region_write_offset + prime_slice + chunk_batch*chunk_size
+                    region_write_offset + prime_slice_lim
                 )
             }
             region_dict.update({d: slice(0, chunks[d]) for d in chunks.keys() if d != primary_dim})
 
-            logger.info(f'Writing region {region_dict}')
+            logger.info(
+                f'Writing region '
+                f'({prime_slice}, {prime_slice_lim}) -> '
+                f'({region_write_offset + prime_slice}, {region_write_offset + prime_slice_lim})'
+            )
 
             ds_region.to_zarr(
                 self.dsinfo['zarr_cache'],
@@ -280,7 +296,8 @@ class RegionWorker:
                 consolidated=True,
                 zarr_format=2,
                 region=region_dict,
-                mode='r+'
+                mode='r+',
+                safe_chunks=False,
             )
             timings.append(datetime.now())
 
