@@ -619,6 +619,9 @@ class ZarrParallelAssembler:
                 # Specify output chunks, although this will not rechunk directly.
                 ds.chunk(self._output_chunks())
 
+                if isinstance(ds, xr.DataArray):
+                    ds = xr.Dataset({ds.name:ds})
+
                 ds = self._override_global_attrs(ds)
 
                 ds.to_zarr(
@@ -628,6 +631,7 @@ class ZarrParallelAssembler:
                     consolidated=True,
                     write_empty_chunks=True,
                     mode='w')
+                
             return
 
         if num_jobs is None:
