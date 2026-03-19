@@ -29,7 +29,7 @@ def test_series(zarr_cache: str = None):
         chunks='auto',
         engine='kerchunk',
         cache_label='_vtest',
-        log_level=2
+        log_level=2,
         add_attrs={'series_test':'abc123'}
     )
     
