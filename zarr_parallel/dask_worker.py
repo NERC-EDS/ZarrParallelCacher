@@ -2,15 +2,17 @@ __author__    = "Daniel Westwood"
 __contact__   = "daniel.westwood@stfc.ac.uk"
 __copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
 
-from dask.distributed import Client, LocalCluster, get_worker, WorkerPlugin
-from typing import Union
-import logging
-from zarr_parallel.utils import logstream, set_verbose
-from zarr_parallel.region import RegionWorker
-import xarray as xr
-import os
 import gc
+import logging
+import os
 import time
+from typing import Union
+
+import xarray as xr
+from dask.distributed import Client, LocalCluster, WorkerPlugin, get_worker
+
+from zarr_parallel.region import RegionWorker
+from zarr_parallel.utils import logstream, set_verbose
 
 logger = logging.getLogger('ZP.' + __name__)
 logger.addHandler(logstream)
@@ -25,6 +27,13 @@ def setup(dask_worker):
     assert isinstance(dask_worker, Worker)
 
 def process_jobs(job_ids):
+    """
+    Process a set of jobs per worker.
+    
+    Each worker now typically receives one job, and performs worker-parallelisation
+    to write chunks individually within the region.
+    """
+
     set_verbose(int(os.environ.get('ZP_LOG_LEVEL',0)))
 
     dask_worker = get_worker()
@@ -34,15 +43,14 @@ def process_jobs(job_ids):
 
     for job_id in job_ids:
         logger.info(f'Worker {dask_worker.id} processing job {job_id}')
-        # config defined the same for all workers
 
+        # Parallelised regions internally based on primary dimension
         rw = RegionWorker(job_id, config)
         rw.write_data_region()
         logger.info(f'Worker {dask_worker.id} processed job {job_id}')
 
         # Garbage Collect all data for this current worker.
         gc.collect()
-        #dask_worker.periodic_callbacks["heartbeat"].callback()
     return True
 
 def get_id(dask_worker):
@@ -53,13 +61,15 @@ def configure_dask_deployment(
         job_ids: Union[int,list],
         worker_config_file: str,
         memory_limit: str = '2GB',
-        threads_per_worker: int = 1):
+        threads_per_worker: int = 1) -> bool:
+    """
+    Configure distributed dask deployment for parallelised caching."""
     
     os.environ["DASK_WORKER_CONFIG"] = worker_config_file
 
     cluster = LocalCluster(
         n_workers=num_dask_workers,
-        threads_per_worker=threads_per_worker,#int(cpus),
+        threads_per_worker=threads_per_worker,
         memory_limit=memory_limit,
     )
 

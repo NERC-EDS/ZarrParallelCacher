@@ -1,15 +1,17 @@
 from zarr_parallel import ZarrParallelAssembler
 from zarr_parallel.utils import set_verbose
+import xarray as xr
 
 import os
 
-def main():
+def test_series(zarr_cache: str = None):
     """
     Basic example test
     """
 
-    set_verbose(2)
-    os.environ['ZP_LOG_LEVEL'] = '1'
+    zarr_cache = zarr_cache or 'zarr_cache/'
+
+    os.environ['ZP_LOG_LEVEL'] = '2'
     
     zp = ZarrParallelAssembler(
         data_uri="https://gws-access.jasmin.ac.uk/public/eds_ai/era5_repack/aggregations/data/ecmwf-era5X_oper_an_sfc_2000_2020_2d_repack.kr1.0.json",
@@ -20,14 +22,21 @@ def main():
         #     # xarray-based transformations SHOULDN'T affect the region arrangements.
         # ],
         preprocessors = [
-        {"type": "subset", "time": ("2000-01-01 00:00:00", "2000-02-28 23:00:00"), "latitude": (60, -30), "longitude": (40, 100)},
+            {"type": "subset", "time": ("2000-01-01 00:00:00", "2000-02-28 23:00:00"), "latitude": (60, -30), "longitude": (40, 100)},
         ],
         chunks='auto',
         engine='kerchunk',
-        cache_label='_vtest'
+        cache_label='_vtest',
+        log_level=2
+        add_attrs={'series_test':'abc123'}
     )
     
-    zp.cache(cache_store='/gws/ssde/j25b/eds_ai/frame-fm/data/zarr_cache/v0.4.0.zarr',deploy_mode='dask_distributed',simultaneous_worker_limit=4, num_jobs=4)
+    zp.cache(cache_store=zarr_cache+'test_series.zarr',deploy_mode='series',simultaneous_worker_limit=4, num_jobs=4)
+    
+    assert os.path.isfile(zarr_cache+'test_series.zarr/d2m/1.0.0')
+
+    ds = xr.open_dataset(zarr_cache+'test_series.zarr')
+    assert ds.attrs['series_test'] == 'abc123'
 
 if __name__ == '__main__':
-    main()
+    test_series()
