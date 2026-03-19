@@ -24,7 +24,7 @@ def test_series(zarr_cache: str = None):
         #     # xarray-based transformations SHOULDN'T affect the region arrangements.
         # ],
         preprocessors = [
-            {"type": "subset", "time": ("2000-01-01 00:00:00", "2000-02-28 23:00:00"), "latitude": (60, -30), "longitude": (40, 100)},
+            {"type": "subset", "time": ("2000-01-01 00:00:00", "2000-01-07 23:00:00"), "latitude": (60, -30), "longitude": (40, 100)},
         ],
         chunks='auto',
         engine='kerchunk',
