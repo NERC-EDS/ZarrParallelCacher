@@ -41,6 +41,9 @@
                             <li class="nav-item">
                                 <a href="./" class="nav-link active" aria-current="page">Assembler</a>
                             </li>
+                            <li class="nav-item">
+                                <a href="../region/" class="nav-link">Region</a>
+                            </li>
                         </ul>
 
                     <ul class="nav navbar-nav ms-md-auto">
@@ -50,7 +53,7 @@
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a rel="next" class="nav-link disabled">
+                                <a rel="next" href="../region/" class="nav-link">
                                     Next <i class="fa fa-arrow-right"></i>
                                 </a>
                             </li>
@@ -76,16 +79,6 @@
               <ul class="nav flex-column">
               </ul>
             </li>
-            
-            <li class="nav-item" data-bs-level="2"><a href="#zarr_parallel.assembler.ZarrParallelAssembler" class="nav-link">ZarrParallelAssembler</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            
-            <li class="nav-item" data-bs-level="2"><a href="#zarr_parallel.assembler.divide_workers" class="nav-link">divide_workers</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
         </ul>
     </div>
 </div></div>
@@ -95,7 +88,12 @@
 
 
 
-<a id="zarr_parallel.assembler"></a>
+<h2 id="zarr_parallel.assembler" class="doc doc-heading">
+            <code>zarr_parallel.assembler</code>
+
+
+</h2>
+
     <div class="doc doc-contents first">
 
 
@@ -115,17 +113,17 @@
 
 
 
-
+<h3 id="zarr_parallel.assembler-classes">Classes</h3>
 
 <div class="doc doc-object doc-class">
 
 
 
-<h2 id="zarr_parallel.assembler.ZarrParallelAssembler" class="doc doc-heading">
-            <code>ZarrParallelAssembler</code>
+<h4 id="zarr_parallel.assembler.ZarrParallelAssembler" class="doc doc-heading">
+            <code>zarr_parallel.assembler.ZarrParallelAssembler</code>
 
 
-</h2>
+</h4>
 
 
     <div class="doc doc-contents ">
@@ -1500,15 +1498,15 @@
 
 
 
-
+<h5 id="zarr_parallel.assembler.ZarrParallelAssembler-functions">Functions</h5>
 
 <div class="doc doc-object doc-function">
 
 
-<h3 id="zarr_parallel.assembler.ZarrParallelAssembler.cache" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">cache</span><span class="p">(</span><span class="n">cache_store</span><span class="p">,</span> <span class="n">num_jobs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">generate_stats</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">deploy_mode</span><span class="o">=</span><span class="s1">&#39;SLURM&#39;</span><span class="p">,</span> <span class="n">await_completion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">simultaneous_worker_limit</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">memory_limit</span><span class="o">=</span><span class="s1">&#39;2GB&#39;</span><span class="p">,</span> <span class="n">worker_timeout</span><span class="o">=</span><span class="s1">&#39;30:00&#39;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">recommend_changes</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">resume</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+<h6 id="zarr_parallel.assembler.ZarrParallelAssembler.cache" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">zarr_parallel</span><span class="o">.</span><span class="n">assembler</span><span class="o">.</span><span class="n">ZarrParallelAssembler</span><span class="o">.</span><span class="n">cache</span><span class="p">(</span><span class="n">cache_store</span><span class="p">,</span> <span class="n">num_jobs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">generate_stats</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">deploy_mode</span><span class="o">=</span><span class="s1">&#39;SLURM&#39;</span><span class="p">,</span> <span class="n">await_completion</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">simultaneous_worker_limit</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">memory_limit</span><span class="o">=</span><span class="s1">&#39;2GB&#39;</span><span class="p">,</span> <span class="n">worker_timeout</span><span class="o">=</span><span class="s1">&#39;30:00&#39;</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">recommend_changes</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">resume</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
-</h3>
+</h6>
 
 
     <div class="doc doc-contents ">
@@ -1798,15 +1796,15 @@
     </div>
 
 </div>
-
+<h3 id="zarr_parallel.assembler-functions">Functions</h3>
 
 <div class="doc doc-object doc-function">
 
 
-<h2 id="zarr_parallel.assembler.divide_workers" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">divide_workers</span><span class="p">(</span><span class="n">workers</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">dims</span><span class="p">)</span></code>
+<h4 id="zarr_parallel.assembler.divide_workers" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">zarr_parallel</span><span class="o">.</span><span class="n">assembler</span><span class="o">.</span><span class="n">divide_workers</span><span class="p">(</span><span class="n">workers</span><span class="p">,</span> <span class="n">weights</span><span class="p">,</span> <span class="n">dims</span><span class="p">)</span></code>
 
-</h2>
+</h4>
 
 
     <div class="doc doc-contents ">

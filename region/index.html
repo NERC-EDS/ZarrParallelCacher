@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        <meta name="author" content="Daniel Westwood">
+        
+        <link rel="shortcut icon" href="../img/favicon.ico">
+        <title>Region - ZarrParallelCacher</title>
+        <link href="../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../css/brands.min.css" rel="stylesheet">
+        <link href="../css/solid.min.css" rel="stylesheet">
+        <link href="../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../assets/_mkdocstrings.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script> 
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="..">ZarrParallelCacher</a>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href=".." class="nav-link">ZarrParallelCacher</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../assembler/" class="nav-link">Assembler</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="./" class="nav-link active" aria-current="page">Region</a>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                            <li class="nav-item">
+                                <a rel="prev" href="../assembler/" class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" class="nav-link disabled">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3"><div class="navbar-expand-md bs-sidebar hidden-print affix" role="complementary">
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" title="Table of Contents">
+            <span class="fa fa-angle-down"></span>
+        </button>
+    </div>
+
+    
+    <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+        <ul class="nav flex-column">
+            
+            <li class="nav-item" data-bs-level="2"><a href="#zarr_parallel.region" class="nav-link">region</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+        </ul>
+    </div>
+</div></div>
+                    <div class="col-md-9" role="main">
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="zarr_parallel.region" class="doc doc-heading">
+            <code>zarr_parallel.region</code>
+
+
+</h2>
+
+    <div class="doc doc-contents first">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<h3 id="zarr_parallel.region-classes">Classes</h3>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h4 id="zarr_parallel.region.RegionWorker" class="doc doc-heading">
+            <code>zarr_parallel.region.RegionWorker</code>
+
+
+</h4>
+
+
+    <div class="doc doc-contents ">
+
+
+
+
+
+
+
+
+
+
+              <details class="mkdocstrings-source">
+                <summary>Source code in <code>zarr_parallel/region.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 49</span>
+<span class="normal"> 50</span>
+<span class="normal"> 51</span>
+<span class="normal"> 52</span>
+<span class="normal"> 53</span>
+<span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span>
+<span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span>
+<span class="normal">180</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span>
+<span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span>
+<span class="normal">207</span>
+<span class="normal">208</span>
+<span class="normal">209</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span>
+<span class="normal">282</span>
+<span class="normal">283</span>
+<span class="normal">284</span>
+<span class="normal">285</span>
+<span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span>
+<span class="normal">289</span>
+<span class="normal">290</span>
+<span class="normal">291</span>
+<span class="normal">292</span>
+<span class="normal">293</span>
+<span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span>
+<span class="normal">301</span>
+<span class="normal">302</span>
+<span class="normal">303</span>
+<span class="normal">304</span>
+<span class="normal">305</span>
+<span class="normal">306</span>
+<span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span>
+<span class="normal">311</span>
+<span class="normal">312</span>
+<span class="normal">313</span>
+<span class="normal">314</span>
+<span class="normal">315</span>
+<span class="normal">316</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span>
+<span class="normal">320</span>
+<span class="normal">321</span>
+<span class="normal">322</span>
+<span class="normal">323</span>
+<span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span>
+<span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span>
+<span class="normal">336</span>
+<span class="normal">337</span>
+<span class="normal">338</span>
+<span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span>
+<span class="normal">348</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RegionWorker</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">heartbeat_timeout</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span><span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">config</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">id</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="nb">id</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span>      <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;dataset&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">transforms</span>  <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;common&#39;</span><span class="p">][</span><span class="s1">&#39;pre_transforms&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">variables</span>   <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;variables&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">region_isel</span> <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;region_info&#39;</span><span class="p">][</span><span class="s1">&#39;region_isel&#39;</span><span class="p">]</span>
+
+        <span class="c1"># Non-tiled datasets will have the same parallelisable and source dims.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span>  <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;region_info&#39;</span><span class="p">][</span><span class="s1">&#39;dims&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fine_dims</span>   <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;region_info&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;fine_dims&#39;</span><span class="p">,{})</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">source_dims</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">region_isel</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">tiled</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">source_dims</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">source_chunks</span> <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;source_chunks&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">output_chunks</span> <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;output_chunks&#39;</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">memory_limit</span> <span class="o">=</span> <span class="n">content</span><span class="p">[</span><span class="s1">&#39;memory_limit&#39;</span><span class="p">]</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat</span> <span class="o">=</span> <span class="n">heartbeat_timeout</span>
+
+        <span class="c1"># Determine coordinate/region extents</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">region_extent</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">map_region</span><span class="p">()</span>
+
+        <span class="c1"># Determine my coordinates</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">coords</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">id_to_coord</span><span class="p">()</span>
+
+        <span class="c1"># Determine my region</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">region</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">region_from_coords</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">dslice</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">resolve_region</span><span class="p">()</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">_prepare_dataset</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">map_region</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">coord_extent</span> <span class="o">=</span> <span class="p">[</span><span class="n">math</span><span class="o">.</span><span class="n">ceil</span><span class="p">((</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_max&#39;</span><span class="p">]</span><span class="o">-</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_min&#39;</span><span class="p">])</span><span class="o">/</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;worker_size&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="o">.</span><span class="n">values</span><span class="p">()]</span>
+        <span class="n">region_extent</span> <span class="o">=</span> <span class="p">[</span><span class="nb">int</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_max&#39;</span><span class="p">]</span><span class="o">-</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_min&#39;</span><span class="p">])</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="o">.</span><span class="n">values</span><span class="p">()]</span>
+
+        <span class="k">return</span> <span class="n">coord_extent</span><span class="p">,</span> <span class="n">region_extent</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">id_to_coord</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">id</span> <span class="o">&gt;</span> <span class="n">math</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;ID </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s1"> invalid for space with </span><span class="si">{</span><span class="n">math</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">)</span><span class="si">}</span><span class="s1"> tiles&#39;</span><span class="p">)</span>
+
+        <span class="n">coords</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">dim</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">)):</span>
+            <span class="n">coord</span> <span class="o">=</span> <span class="mi">0</span>
+
+            <span class="c1"># Calculate stride product</span>
+            <span class="n">strideprod</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">for</span> <span class="n">stride</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">[</span><span class="n">dim</span><span class="o">+</span><span class="mi">1</span><span class="p">:]:</span>
+                <span class="n">strideprod</span> <span class="o">*=</span> <span class="n">stride</span>
+            <span class="n">coord</span> <span class="o">+=</span> <span class="n">math</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="o">/</span><span class="n">strideprod</span><span class="p">)</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">[</span><span class="n">dim</span><span class="p">]</span>
+
+            <span class="n">coords</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">coord</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">coords</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">region_from_coords</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="n">region</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">(</span><span class="n">dim</span><span class="p">,</span> <span class="n">dinfo</span><span class="p">)</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="o">.</span><span class="n">items</span><span class="p">()):</span>
+
+            <span class="n">rmin</span> <span class="o">=</span> <span class="n">dinfo</span><span class="p">[</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">rmax</span> <span class="o">=</span> <span class="n">dinfo</span><span class="p">[</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span><span class="o">*</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">[</span><span class="n">i</span><span class="p">]</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="n">rmax</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">region_extent</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+            <span class="n">region</span><span class="p">[</span><span class="n">dim</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">rmin</span><span class="p">,</span><span class="n">rmax</span><span class="p">)</span>
+
+        <span class="c1"># Add tiled fine dims in the case of additional fine dims</span>
+        <span class="k">for</span> <span class="n">dim</span><span class="p">,</span> <span class="n">dinfo</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fine_dims</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">region</span><span class="p">[</span><span class="n">dim</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">dinfo</span><span class="p">[</span><span class="s1">&#39;source_min&#39;</span><span class="p">],</span> <span class="n">dinfo</span><span class="p">[</span><span class="s1">&#39;source_max&#39;</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">region</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">start_from</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ndims</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">chunks</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Detect past progress on writing the zarr store</span>
+
+<span class="sd">        Limitation: Primary chunk dimension must be the first dimension.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="n">trailing_zeros</span> <span class="o">=</span> <span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s2">&quot;0&quot;</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ndims</span><span class="o">-</span><span class="mi">1</span><span class="p">)])</span>
+
+        <span class="n">primary_dim</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="o">.</span><span class="n">keys</span><span class="p">())[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="n">zero_chunk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">][</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">][</span><span class="s1">&#39;cache_size&#39;</span><span class="p">]</span>
+        <span class="n">chunk_id</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">zero_chunk</span>
+
+        <span class="n">file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;zarr_cache&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">var</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">.&quot;</span> <span class="o">+</span> <span class="n">trailing_zeros</span>
+        <span class="k">while</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">file</span><span class="p">):</span>
+            <span class="n">file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;zarr_cache&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">var</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">.&quot;</span> <span class="o">+</span> <span class="n">trailing_zeros</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Locating </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;zarr_cache&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">var</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">.&quot;</span> <span class="o">+</span> <span class="n">trailing_zeros</span><span class="p">)</span>
+            <span class="n">chunk_id</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">if</span> <span class="n">chunk_id</span> <span class="o">&gt;</span> <span class="n">zero_chunk</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resuming from chunk ID: </span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Starting from chunk ID: </span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">chunk_id</span> <span class="o">-</span> <span class="n">zero_chunk</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">write_data_region</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="c1"># Open config file as dict</span>
+
+        <span class="c1"># Determine coordinates of region</span>
+        <span class="c1"># Map to slice of total dataset</span>
+        <span class="c1"># Extract selection </span>
+
+        <span class="c1"># Determine current region</span>
+
+        <span class="n">chunks</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_chunks</span>
+
+        <span class="c1"># Replace with logging</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;ID: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Coords: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Chunks: </span><span class="si">{</span><span class="n">chunks</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+
+        <span class="n">darrs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">extract_subset</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">darr</span> <span class="ow">in</span> <span class="n">darrs</span><span class="p">:</span>
+
+            <span class="n">var</span> <span class="o">=</span> <span class="n">darr</span><span class="o">.</span><span class="n">name</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Writing </span><span class="si">{</span><span class="n">var</span><span class="si">}</span><span class="s2"> Region&quot;</span><span class="p">)</span>
+
+            <span class="c1"># heartbeat required - split into sections </span>
+            <span class="c1"># chunking required - split into sections</span>
+            <span class="n">start_from</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">start_from</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">darr</span><span class="o">.</span><span class="n">dims</span><span class="p">),</span> <span class="n">chunks</span><span class="p">)</span>
+
+            <span class="n">force_rechunk</span> <span class="o">=</span> <span class="n">chunks</span> <span class="o">!=</span> <span class="p">{}</span> <span class="ow">and</span> <span class="n">chunks</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">source_chunks</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">force_rechunk</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">start_from</span> <span class="ow">and</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">tiled</span><span class="p">:</span>
+                <span class="c1"># Write the whole region to the zarr cache</span>
+                <span class="kn">import</span><span class="w"> </span><span class="nn">pdb</span><span class="p">;</span> <span class="n">pdb</span><span class="o">.</span><span class="n">set_trace</span><span class="p">()</span>
+                <span class="n">darr</span><span class="o">.</span><span class="n">to_zarr</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;zarr_cache&#39;</span><span class="p">],</span> 
+                    <span class="n">zarr_format</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> 
+                    <span class="n">compute</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> 
+                    <span class="n">consolidated</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">region</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">region</span><span class="p">,</span>
+                    <span class="n">write_empty_chunks</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                    <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;r+&#39;</span><span class="p">)</span>
+
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_balanced_chunk_write</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="n">darr</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">start_from</span><span class="o">=</span><span class="n">start_from</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Complete for </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_balanced_chunk_write</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">darr</span><span class="p">:</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">,</span> <span class="n">chunks</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">start_from</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Control the rate of chunk writes based on time/memory requirements</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># Standard approach: single chunk output at a time.</span>
+
+        <span class="c1"># Balanced approach:</span>
+        <span class="c1"># - Chunking invokes numpy arrays - balance memory up to limit</span>
+        <span class="c1"># - Dask workers invoke heartbeat - balance timeout up to limit</span>
+        <span class="c1"># - Split chunk writes require max number of chunks per-write that fit within limits</span>
+
+        <span class="n">primary_dim</span>   <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="o">.</span><span class="n">keys</span><span class="p">())[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">chunk_size</span>    <span class="o">=</span> <span class="n">chunks</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">]</span>
+        <span class="n">prime_slice</span>   <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># Byte limit for memory</span>
+        <span class="n">memory_limit_bytes</span>  <span class="o">=</span> <span class="mf">0.85</span> <span class="o">*</span> <span class="n">interpret_mem_limit</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">memory_limit</span><span class="p">)</span>
+        <span class="c1"># Chunk limit based on memory</span>
+        <span class="n">max_mem_batch_chunk</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">memory_limit_bytes</span> <span class="o">/</span> <span class="p">(</span><span class="n">math</span><span class="o">.</span><span class="n">prod</span><span class="p">(</span><span class="n">chunks</span><span class="o">.</span><span class="n">values</span><span class="p">())</span> <span class="o">*</span> <span class="mi">8</span><span class="p">))</span>
+        <span class="c1"># Offset to write region into parallel dataset</span>
+        <span class="n">region_write_offset</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">][</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span>
+
+        <span class="c1"># Limitation: Tiled datasets will always result in 1-1 tile-chunking</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tiled</span><span class="p">:</span>
+            <span class="n">darr</span> <span class="o">=</span> <span class="n">darr</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="o">**</span><span class="p">{</span>
+                <span class="n">primary_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span>
+                    <span class="n">region_write_offset</span><span class="p">,</span>
+                    <span class="n">region_write_offset</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">][</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span>
+                <span class="p">)</span>
+            <span class="p">})</span>
+            <span class="n">mem_chunks</span> <span class="o">=</span> <span class="mi">1</span>
+            <span class="k">for</span> <span class="n">dim</span><span class="p">,</span> <span class="n">dinf</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fine_dims</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">chunks</span><span class="p">[</span><span class="n">dim</span><span class="p">]</span> <span class="o">=</span> <span class="n">dinf</span><span class="p">[</span><span class="s1">&#39;source_max&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="n">dinf</span><span class="p">[</span><span class="s1">&#39;source_min&#39;</span><span class="p">]</span>
+
+                <span class="c1"># If source chunks are larger than the tile selection, memory size is based on the source chunks</span>
+                <span class="n">mem_chunks</span> <span class="o">*=</span> <span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">source_chunks</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">dim</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;_&#39;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]),</span> <span class="n">chunks</span><span class="p">[</span><span class="n">dim</span><span class="p">])</span>
+
+            <span class="n">max_mem_batch_chunk</span> <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">floor</span><span class="p">(</span><span class="n">memory_limit_bytes</span> <span class="o">/</span> <span class="p">(</span><span class="n">mem_chunks</span> <span class="o">*</span> <span class="mi">8</span><span class="p">))</span>
+
+        <span class="k">if</span> <span class="n">max_mem_batch_chunk</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s1">&#39;Memory limit too low to process even a single chunk. &#39;</span>
+                <span class="sa">f</span><span class="s1">&#39;Limit: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">memory_limit</span><span class="si">}</span><span class="s1">, Approx Required: </span><span class="si">{</span><span class="n">mem_chunks</span><span class="o">*</span><span class="mi">8</span><span class="o">/</span><span class="mf">1e6</span><span class="w"> </span><span class="si">:</span><span class="s1">.2f</span><span class="si">}</span><span class="s1"> MB&#39;</span><span class="p">)</span>
+
+        <span class="n">chunk_batch</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">max_mem_batch_chunk</span><span class="p">)</span>
+
+        <span class="c1"># Number of chunks to write</span>
+        <span class="n">nchunks</span>     <span class="o">=</span> <span class="n">math</span><span class="o">.</span><span class="n">ceil</span><span class="p">(</span><span class="n">darr</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="o">/</span><span class="n">chunk_size</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Balancing chunk writes for </span><span class="si">{</span><span class="n">nchunks</span><span class="si">}</span><span class="s1"> chunks&#39;</span><span class="p">)</span>
+
+        <span class="n">complete</span> <span class="o">=</span> <span class="kc">False</span>
+        <span class="k">while</span> <span class="ow">not</span> <span class="n">complete</span><span class="p">:</span>
+
+            <span class="n">timings</span> <span class="o">=</span> <span class="p">[]</span>
+
+            <span class="c1"># Recalculate limits for chunk batch.</span>
+            <span class="n">prime_slice_lim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">prime_slice</span> <span class="o">+</span> <span class="n">chunk_batch</span><span class="o">*</span><span class="n">chunk_size</span><span class="p">)</span>
+            <span class="c1"># Handle final case + overflowing chunk batch request size</span>
+            <span class="k">if</span> <span class="n">prime_slice_lim</span> <span class="o">&gt;</span> <span class="n">darr</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="p">:</span>
+
+                <span class="n">chunk_batch</span> <span class="o">=</span> <span class="nb">int</span><span class="p">((</span><span class="n">darr</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">]</span><span class="o">.</span><span class="n">size</span> <span class="o">-</span> <span class="n">prime_slice</span><span class="p">)</span><span class="o">/</span><span class="n">chunk_size</span><span class="p">)</span>
+                <span class="n">prime_slice_lim</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">darr</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">]</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+                <span class="n">complete</span> <span class="o">=</span> <span class="kc">True</span>
+
+            <span class="n">timings</span> <span class="o">=</span> <span class="p">[</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()]</span>
+            <span class="n">ds_sub</span> <span class="o">=</span> <span class="n">darr</span><span class="o">.</span><span class="n">isel</span><span class="p">(</span><span class="o">**</span><span class="p">{</span><span class="n">primary_dim</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="n">prime_slice</span><span class="p">,</span> <span class="n">prime_slice_lim</span><span class="p">)})</span><span class="o">.</span><span class="n">compute</span><span class="p">()</span>
+
+            <span class="c1"># Append timing for numpy casting</span>
+            <span class="n">timings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">())</span>
+
+            <span class="n">ds_region</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">Dataset</span><span class="p">(</span>
+                <span class="p">{</span><span class="n">d</span><span class="p">:</span> <span class="n">ds_sub</span><span class="p">[</span><span class="n">d</span><span class="p">]</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">ds_sub</span><span class="o">.</span><span class="n">dims</span><span class="p">})</span>
+
+            <span class="n">dask_chunks</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">([</span><span class="n">chunks</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">chunks</span><span class="o">.</span><span class="n">keys</span><span class="p">()])</span>
+            <span class="n">ds_region</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">(</span><span class="n">da</span><span class="o">.</span><span class="n">from_array</span><span class="p">(</span><span class="n">ds_sub</span><span class="o">.</span><span class="n">to_numpy</span><span class="p">(),</span> <span class="n">chunks</span><span class="o">=</span><span class="n">dask_chunks</span><span class="p">),</span> <span class="n">dims</span><span class="o">=</span><span class="nb">list</span><span class="p">(</span><span class="n">chunks</span><span class="o">.</span><span class="n">keys</span><span class="p">()))</span>
+
+            <span class="n">region_dict</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">primary_dim</span><span class="p">:</span><span class="nb">slice</span><span class="p">(</span>
+                    <span class="n">region_write_offset</span> <span class="o">+</span> <span class="n">prime_slice</span><span class="p">,</span> 
+                    <span class="n">region_write_offset</span> <span class="o">+</span> <span class="n">prime_slice_lim</span>
+                <span class="p">)</span>
+            <span class="p">}</span>
+            <span class="n">region_dict</span><span class="o">.</span><span class="n">update</span><span class="p">({</span><span class="n">d</span><span class="p">:</span> <span class="nb">slice</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">chunks</span><span class="p">[</span><span class="n">d</span><span class="p">])</span> <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="n">chunks</span><span class="o">.</span><span class="n">keys</span><span class="p">()</span> <span class="k">if</span> <span class="n">d</span> <span class="o">!=</span> <span class="n">primary_dim</span><span class="p">})</span>
+
+            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s1">&#39;Writing region &#39;</span>
+                <span class="sa">f</span><span class="s1">&#39;(</span><span class="si">{</span><span class="n">prime_slice</span><span class="si">}</span><span class="s1">, </span><span class="si">{</span><span class="n">prime_slice_lim</span><span class="si">}</span><span class="s1">) -&gt; &#39;</span>
+                <span class="sa">f</span><span class="s1">&#39;(</span><span class="si">{</span><span class="n">region_write_offset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">prime_slice</span><span class="si">}</span><span class="s1">, </span><span class="si">{</span><span class="n">region_write_offset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">prime_slice_lim</span><span class="si">}</span><span class="s1">)&#39;</span>
+            <span class="p">)</span>
+
+            <span class="n">ds_region</span><span class="o">.</span><span class="n">to_zarr</span><span class="p">(</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;zarr_cache&#39;</span><span class="p">],</span>
+                <span class="n">compute</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">consolidated</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                <span class="n">zarr_format</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span>
+                <span class="n">region</span><span class="o">=</span><span class="n">region_dict</span><span class="p">,</span>
+                <span class="n">mode</span><span class="o">=</span><span class="s1">&#39;r+&#39;</span><span class="p">,</span>
+                <span class="n">safe_chunks</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="p">)</span>
+            <span class="n">timings</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">())</span>
+
+            <span class="c1"># Next iteration, update start position</span>
+            <span class="n">prime_slice</span> <span class="o">+=</span> <span class="n">chunk_batch</span><span class="o">*</span><span class="n">chunk_size</span>
+
+            <span class="c1"># Increase chunk usage (if possible) or decrease as necessary</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+
+                <span class="n">max_time</span> <span class="o">=</span> <span class="nb">max</span><span class="p">([(</span><span class="n">t</span> <span class="o">-</span> <span class="n">timings</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">.</span><span class="n">total_seconds</span><span class="p">()</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">timings</span><span class="p">])</span>
+
+                <span class="c1"># Timeout comparison formula - allows increase in chunk batch size if timeout allows</span>
+                <span class="n">estm_chunk_limit</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span>
+                    <span class="mi">2</span><span class="p">,</span> <span class="nb">int</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span>
+                        <span class="p">((</span><span class="bp">self</span><span class="o">.</span><span class="n">heartbeat</span><span class="o">*</span><span class="mf">0.85</span><span class="p">)</span><span class="o">-</span><span class="n">max_time</span><span class="p">)</span><span class="o">*</span><span class="p">(</span><span class="n">chunk_batch</span><span class="p">)</span><span class="o">/</span><span class="n">max_time</span>
+                    <span class="p">)</span>
+                <span class="p">))</span><span class="o">/</span><span class="mi">2</span>
+
+                <span class="k">if</span> <span class="n">max_time</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat</span><span class="o">*</span><span class="mf">0.85</span><span class="p">:</span>
+                    <span class="n">batch_chunk</span> <span class="o">+=</span> <span class="n">estm_chunk_limit</span>
+                    <span class="k">if</span> <span class="n">batch_chunk</span> <span class="o">&gt;</span> <span class="n">max_mem_batch_chunk</span><span class="p">:</span>
+                        <span class="n">batch_chunk</span> <span class="o">=</span> <span class="n">max_mem_batch_chunk</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; &gt; Increased to </span><span class="si">{</span><span class="n">batch_chunk</span><span class="si">}</span><span class="s1"> chunks&#39;</span><span class="p">)</span>
+
+                <span class="k">if</span> <span class="n">max_time</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">heartbeat</span><span class="o">*</span><span class="mf">0.85</span><span class="p">:</span>
+                    <span class="n">batch_chunk</span> <span class="o">-=</span> <span class="n">estm_chunk_limit</span>
+                    <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39; &gt; Decreased to </span><span class="si">{</span><span class="n">batch_chunk</span><span class="si">}</span><span class="s1"> chunks&#39;</span><span class="p">)</span>
+
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s1">&#39;All chunks written to zarr store&#39;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_prepare_dataset</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">ds</span> <span class="o">=</span> <span class="n">xr</span><span class="o">.</span><span class="n">open_dataset</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;uri&#39;</span><span class="p">],</span>
+            <span class="n">engine</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;engine&#39;</span><span class="p">],</span>
+            <span class="n">chunks</span><span class="o">=</span><span class="s1">&#39;auto&#39;</span><span class="p">,</span>
+            <span class="o">**</span><span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;kwargs&#39;</span><span class="p">,{})</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">resolve_region</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">slice</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Resolve region to determine slice to subset</span>
+
+<span class="sd">        Currently superfluous as the region is equal to the slice,</span>
+<span class="sd">        but if the improvement to directly slice from source is made,</span>
+<span class="sd">        this function becomes useful again.&quot;&quot;&quot;</span>
+
+        <span class="n">dslice</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">dcount</span> <span class="o">=</span> <span class="mi">0</span>
+
+        <span class="c1"># Tiled dataset - special case for resolving the region</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tiled</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">region_isel</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+                <span class="n">dslice</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_min&#39;</span><span class="p">],</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_max&#39;</span><span class="p">])</span>
+            <span class="k">return</span> <span class="n">dslice</span>
+
+        <span class="c1"># This creates the pre-tiled slice to apply to the dataset.</span>
+        <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">region_isel</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">dmin</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_min&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">dcount</span><span class="p">]</span><span class="o">*</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span>
+            <span class="n">dmax</span> <span class="o">=</span> <span class="n">dmin</span> <span class="o">+</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span>
+
+            <span class="c1"># Adjust to fit boundary in the case of smaller final chunk</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">dcount</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">[</span><span class="n">dcount</span><span class="p">]</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="n">dmax</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_max&#39;</span><span class="p">]</span>
+
+            <span class="n">dslice</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">dmin</span><span class="p">,</span> <span class="n">dmax</span><span class="p">)</span>
+            <span class="n">dcount</span> <span class="o">+=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="n">dslice</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">extract_subset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Open a remote dataset and extract an xarray DataArray</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+
+        <span class="c1"># All selected transforms applied in correct order.</span>
+        <span class="n">transformed</span> <span class="o">=</span> <span class="n">apply_transforms</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">ds</span><span class="p">,</span>
+            <span class="n">common_transforms</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transforms</span><span class="p">,</span>
+            <span class="n">variable_transforms</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">variables</span><span class="p">,</span>
+            <span class="n">region_transform</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">dslice</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">transformed</span><span class="p">[</span><span class="s1">&#39;datasets&#39;</span><span class="p">]</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+<h5 id="zarr_parallel.region.RegionWorker-functions">Functions</h5>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="zarr_parallel.region.RegionWorker.extract_subset" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">zarr_parallel</span><span class="o">.</span><span class="n">region</span><span class="o">.</span><span class="n">RegionWorker</span><span class="o">.</span><span class="n">extract_subset</span><span class="p">()</span></code>
+
+</h6>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Open a remote dataset and extract an xarray DataArray</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>zarr_parallel/region.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">extract_subset</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">xr</span><span class="o">.</span><span class="n">DataArray</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Open a remote dataset and extract an xarray DataArray</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="c1"># All selected transforms applied in correct order.</span>
+    <span class="n">transformed</span> <span class="o">=</span> <span class="n">apply_transforms</span><span class="p">(</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ds</span><span class="p">,</span>
+        <span class="n">common_transforms</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">transforms</span><span class="p">,</span>
+        <span class="n">variable_transforms</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">variables</span><span class="p">,</span>
+        <span class="n">region_transform</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">dslice</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="n">transformed</span><span class="p">[</span><span class="s1">&#39;datasets&#39;</span><span class="p">]</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="zarr_parallel.region.RegionWorker.resolve_region" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">zarr_parallel</span><span class="o">.</span><span class="n">region</span><span class="o">.</span><span class="n">RegionWorker</span><span class="o">.</span><span class="n">resolve_region</span><span class="p">()</span></code>
+
+</h6>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Resolve region to determine slice to subset</p>
+<p>Currently superfluous as the region is equal to the slice,
+but if the improvement to directly slice from source is made,
+this function becomes useful again.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>zarr_parallel/region.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span>
+<span class="normal">348</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">resolve_region</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">slice</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Resolve region to determine slice to subset</span>
+
+<span class="sd">    Currently superfluous as the region is equal to the slice,</span>
+<span class="sd">    but if the improvement to directly slice from source is made,</span>
+<span class="sd">    this function becomes useful again.&quot;&quot;&quot;</span>
+
+    <span class="n">dslice</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">dcount</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="c1"># Tiled dataset - special case for resolving the region</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">tiled</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">region_isel</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">dslice</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_min&#39;</span><span class="p">],</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_max&#39;</span><span class="p">])</span>
+        <span class="k">return</span> <span class="n">dslice</span>
+
+    <span class="c1"># This creates the pre-tiled slice to apply to the dataset.</span>
+    <span class="k">for</span> <span class="n">d</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">region_isel</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">dmin</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_min&#39;</span><span class="p">]</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">dcount</span><span class="p">]</span><span class="o">*</span><span class="n">v</span><span class="p">[</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span>
+        <span class="n">dmax</span> <span class="o">=</span> <span class="n">dmin</span> <span class="o">+</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span>
+
+        <span class="c1"># Adjust to fit boundary in the case of smaller final chunk</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="n">dcount</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">coord_extent</span><span class="p">[</span><span class="n">dcount</span><span class="p">]</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+            <span class="n">dmax</span> <span class="o">=</span> <span class="n">v</span><span class="p">[</span><span class="s1">&#39;source_max&#39;</span><span class="p">]</span>
+
+        <span class="n">dslice</span><span class="p">[</span><span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="nb">slice</span><span class="p">(</span><span class="n">dmin</span><span class="p">,</span> <span class="n">dmax</span><span class="p">)</span>
+        <span class="n">dcount</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">return</span> <span class="n">dslice</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h6 id="zarr_parallel.region.RegionWorker.start_from" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">zarr_parallel</span><span class="o">.</span><span class="n">region</span><span class="o">.</span><span class="n">RegionWorker</span><span class="o">.</span><span class="n">start_from</span><span class="p">(</span><span class="n">var</span><span class="p">,</span> <span class="n">ndims</span><span class="p">,</span> <span class="n">chunks</span><span class="p">)</span></code>
+
+</h6>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Detect past progress on writing the zarr store</p>
+<p>Limitation: Primary chunk dimension must be the first dimension.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>zarr_parallel/region.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">start_from</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">var</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ndims</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">chunks</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Detect past progress on writing the zarr store</span>
+
+<span class="sd">    Limitation: Primary chunk dimension must be the first dimension.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">trailing_zeros</span> <span class="o">=</span> <span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="s2">&quot;0&quot;</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">ndims</span><span class="o">-</span><span class="mi">1</span><span class="p">)])</span>
+
+    <span class="n">primary_dim</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="o">.</span><span class="n">keys</span><span class="p">())[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="n">zero_chunk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">][</span><span class="s1">&#39;worker_size&#39;</span><span class="p">]</span><span class="o">/</span><span class="bp">self</span><span class="o">.</span><span class="n">parallelisable_dims</span><span class="p">[</span><span class="n">primary_dim</span><span class="p">][</span><span class="s1">&#39;cache_size&#39;</span><span class="p">]</span>
+    <span class="n">chunk_id</span>    <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">coords</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">zero_chunk</span>
+
+    <span class="n">file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;zarr_cache&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">var</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">.&quot;</span> <span class="o">+</span> <span class="n">trailing_zeros</span>
+    <span class="k">while</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">file</span><span class="p">):</span>
+        <span class="n">file</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;zarr_cache&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">var</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">.&quot;</span> <span class="o">+</span> <span class="n">trailing_zeros</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Locating </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">dsinfo</span><span class="p">[</span><span class="s1">&#39;zarr_cache&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">var</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">.&quot;</span> <span class="o">+</span> <span class="n">trailing_zeros</span><span class="p">)</span>
+        <span class="n">chunk_id</span> <span class="o">+=</span> <span class="mi">1</span>
+
+    <span class="k">if</span> <span class="n">chunk_id</span> <span class="o">&gt;</span> <span class="n">zero_chunk</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Resuming from chunk ID: </span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Starting from chunk ID: </span><span class="si">{</span><span class="n">chunk_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">chunk_id</span> <span class="o">-</span> <span class="n">zero_chunk</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+<h3 id="zarr_parallel.region-functions">Functions</h3>
+
+
+
+  </div>
+
+    </div>
+
+</div></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../js/base.js"></script>
+
+        <div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

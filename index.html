@@ -41,6 +41,9 @@
                             <li class="nav-item">
                                 <a href="assembler/" class="nav-link">Assembler</a>
                             </li>
+                            <li class="nav-item">
+                                <a href="region/" class="nav-link">Region</a>
+                            </li>
                         </ul>
 
                     <ul class="nav navbar-nav ms-md-auto">
@@ -124,7 +127,7 @@ zp.cache(
 <h2 id="assembler">Assembler</h2>
 <p>See the <a href="assembler/">assembler source code</a> to understand how the assembler calculates region/chunk information to assemble parallel jobs.</p>
 <h2 id="regions">Regions</h2>
-<p>Zarr supports writing regions of data natively, such that parallel jobs can write different regions into the zarr dataset simultaneously. The assembler takes care of splitting the dataset into non-overlapping chunk-aware regions that may also be tiled (for AI/ML purposes). See the <a href="region.md">region source code</a> to understand how the region writer applies worker-level job divisions to essentially write a batch of chunks to disk. One batch consists of one or more chunks, allowing for memory limitations when re-chunking as well as heartbeat requirements between writes (i.e for dask distributed workers).</p>
+<p>Zarr supports writing regions of data natively, such that parallel jobs can write different regions into the zarr dataset simultaneously. The assembler takes care of splitting the dataset into non-overlapping chunk-aware regions that may also be tiled (for AI/ML purposes). See the <a href="region/">region source code</a> to understand how the region writer applies worker-level job divisions to essentially write a batch of chunks to disk. One batch consists of one or more chunks, allowing for memory limitations when re-chunking as well as heartbeat requirements between writes (i.e for dask distributed workers).</p>
 <h2 id="transformspreprocessors">Transforms/Preprocessors</h2>
 <p>Transformations to the data may be specified via the selector option passed in the above example. Xarray-native transformations are supported, as well as transforms from the FRAME-FM package if installed.</p>
 <h2 id="selectiontiling-recommendations">Selection/Tiling Recommendations</h2>
@@ -189,5 +192,5 @@ zp.cache(
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-19 16:45:03.390037+00:00
+Build Date UTC : 2026-03-19 16:50:04.037155+00:00
 -->
