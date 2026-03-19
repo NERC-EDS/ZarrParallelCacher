@@ -1,11 +1,14 @@
 # Zarr Parallel Cacher
 
+![Current Git Release](https://img.shields.io/github/v/release/NERC-EDS/ZarrParallelCacher)
+[![PyPI version](https://badge.fury.io/py/zarr-parallel.svg)](https://pypi.python.org/pypi/zarr-parallel/)
+
 This package has been developed as part of the NERC EDS FRAME-FM AI project. It has been separated into its own module for ease of reusability across multiple projects. AI-specific steps may form part of the package, but may also be disabled by default.
 
 ## Basic Usage
 
 ```
-from zarr_parallel.assembler import ZarrParallelAssembler
+from zarr_parallel import ZarrParallelAssembler
 
 zp = ZarrParallelAssembler(data_uri=uri, preprocessors=preprocessors,
             chunks=chunks,
@@ -41,3 +44,8 @@ The assembler will halt to recommend alternative data selections based on the un
     - Small parallel writes were found to be inefficient, so the writes are parallelised to the largest possible selection while adhering to memory/timeout limits.
 - Tiling parallelisation now available. Caveats:
     - Tiling necessitates rechunking to single chunk-per-tile. This means tile size may need to be smaller than expected to account for memory limitations of individual worker - specifically where source chunking scheme inflates the size of data initially retrieved. Error will be raised if the estimated memory requirement per tile is larger than the memory limit for the worker.
+
+### Version 0.5 Changes
+- Fixed bugs with chunk identification for both tiled and non-tiled datasets.
+- Attributes now set for parallel and series writes to zarr.
+- Documentation added using Mkdocs!
