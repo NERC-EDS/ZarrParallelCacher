@@ -27,5 +27,6 @@ region_write = "zarr_parallel.region:main"
 [dependency-groups]
 dev = [
     "isort (>=7.0.0,<8.0.0)",
-    "mkdocs (>=1.6.1,<2.0.0)"
+    "mkdocs (>=1.6.1,<2.0.0)",
+    "pytest (>=9.0.2,<10.0.0)"
 ]
