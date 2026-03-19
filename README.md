@@ -48,4 +48,5 @@ The assembler will halt to recommend alternative data selections based on the un
 ### Version 0.5 Changes
 - Fixed bugs with chunk identification for both tiled and non-tiled datasets.
 - Attributes now set for parallel and series writes to zarr.
+- Logging now enabled in the assembler directly - pass `log_level` argument as int from 0 to 2 for warnings/info/debugging.
 - Documentation added using Mkdocs!
