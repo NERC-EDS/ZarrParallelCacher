@@ -1,8 +1,10 @@
-from zarr_parallel import ZarrParallelAssembler
-from zarr_parallel.utils import set_verbose
+import os
+
 import xarray as xr
 
-import os
+from zarr_parallel import ZarrParallelAssembler
+from zarr_parallel.utils import set_verbose
+
 
 def test_series(zarr_cache: str = None):
     """

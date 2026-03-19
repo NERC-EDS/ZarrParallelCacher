@@ -1,7 +1,8 @@
+import os
+
 from zarr_parallel import ZarrParallelAssembler
 from zarr_parallel.utils import set_verbose
 
-import os
 
 def main():
     """
