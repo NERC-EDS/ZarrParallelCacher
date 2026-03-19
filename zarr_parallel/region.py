@@ -2,18 +2,18 @@ __author__    = "Daniel Westwood"
 __contact__   = "daniel.westwood@stfc.ac.uk"
 __copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
 
+import json
 import logging
 import math
 import sys
-from typing import Union
 from datetime import datetime
+from typing import Union
 
-import xarray as xr
 import dask.array as da
-import json
+import xarray as xr
 
-from zarr_parallel.utils import logstream, interpret_mem_limit, set_verbose
 from zarr_parallel.transforms import apply_transforms
+from zarr_parallel.utils import interpret_mem_limit, logstream, set_verbose
 
 logger = logging.getLogger('ZP.' + __name__)
 logger.addHandler(logstream)
@@ -392,7 +392,9 @@ if __name__ == '__main__':
     rw = RegionWorker(id, config)
     rw.write_data_region()
 
-    import psutil, os
+    import os
+
+    import psutil
 
     process = psutil.Process(os.getpid())
     print("Memory used (RSS):", process.memory_info().rss, "bytes")

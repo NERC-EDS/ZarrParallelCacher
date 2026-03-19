@@ -2,23 +2,22 @@ __author__    = "Daniel Westwood"
 __contact__   = "daniel.westwood@stfc.ac.uk"
 __copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
 
-# Replaces the cache_data_to_zarr function with the below code
+import copy
+import json
 import logging
 import math
 import os
 from typing import Union
 
-import dask.array as da
 import dask
+import dask.array as da
 import numpy as np
 import xarray as xr
-import json
-import copy
 
-from zarr_parallel.utils import logstream, interpret_mem_limit
 from zarr_parallel.dask_worker import configure_dask_deployment
 from zarr_parallel.slurm import configure_slurm_deployment
 from zarr_parallel.transforms import apply_transforms
+from zarr_parallel.utils import logstream, set_verbose
 
 logger = logging.getLogger('ZP.' + __name__)
 logger.addHandler(logstream)
@@ -30,7 +29,11 @@ dask.config.set({
     "distributed.comm.timeouts.tcp": "60s",
 })
 
-def divide_workers(workers, weights, dims):
+def divide_workers(workers: int, weights: list, dims: list) -> dict:
+    """
+    Split workers between dimensions based on weights.
+    
+    Product of worker splits must equal total workers."""
 
     allocations = {}
 
@@ -44,6 +47,7 @@ def divide_workers(workers, weights, dims):
     return allocations
 
 class ZarrParallelAssembler:
+    description = "Class to handle parallel assembly of zarr datasets based on source chunk structure and selection/transforms."
 
     def __init__(
             self,
@@ -51,10 +55,13 @@ class ZarrParallelAssembler:
             preprocessors: Union[list,None] = None,
             chunks: Union[dict,str,None] = None,
             cache_label: Union[str,None] = None,
-            engine: str = 'kerchunk',
             variables: Union[list,None] = None,
-            add_attrs: Union[dict,None] = None
+            add_attrs: Union[dict,None] = None,
+            engine: str = 'kerchunk',
+            log_level: int = 0,
         ):
+
+        set_verbose(log_level)
 
         self.uri           = data_uri
         self.engine        = engine
@@ -65,18 +72,19 @@ class ZarrParallelAssembler:
         self.add_attrs = add_attrs
 
         # Future properties
-        self.reconfigure     = None
-        self.tiler_transform = None
-        self._ds             = None
-        self.dimensions      = None
-        self.output_chunks   = None
-        self.batch_dim_worker_size = None
-        self.global_attrs    = None
-        self.dim_spec        = None
+        self.reconfigure: str      = None
+        self.tiler_transform: dict = None
+        self._ds: xr.Dataset       = None
+        self.dimensions: dict      = None
+        self.output_chunks: dict   = None
+        self.batch_dim_worker_size: int = None
+        self.global_attrs: dict    = None
+        self.dim_spec: dict        = None
 
-        self.source_chunks = None
-        self.chunked_dims = None
+        self.source_chunks: dict = None
+        self.chunked_dims: dict = None
         
+        # Fill in all parameters based on preprocessors and chunks
         self._interpret_params(transforms=preprocessors, chunks=chunks)
 
     def _interpret_params(
@@ -85,7 +93,8 @@ class ZarrParallelAssembler:
             chunks: Union[dict,str,None] = None
            ) -> list:
         """
-        Interpret the transforms to determine the dimensions, source chunks and other information required for tiling and selection arrangements.
+        Interpret the transforms to determine the dimensions, 
+        source chunks and other information required for tiling and selection arrangements.
         """
 
         ### 0. Establish connection to source endpoint
@@ -115,6 +124,7 @@ class ZarrParallelAssembler:
             if transform['type'] == 'rename':
                 var_mapping[transform['var_id']] = transform['new_name']
                 
+        ### 1.1 Default subset - global dataset
         if not subset:
             self.dimensions = {d: [0, len(ds[d])] for d in ds.dims}
             self.transforms.append({'type':'isel', **self.dimensions})
@@ -180,22 +190,27 @@ class ZarrParallelAssembler:
         for dx, (dim, chunk) in enumerate(ds.chunks.items()):
             tile = self.tiler_transform.get(dim,None)
 
-            if tile is not None:
-                rem = tile%chunk[0]
-                if rem == 0 or rem == tile: 
-                    continue
+            if tile is None:
+                continue
 
-                # Tiling recommendations should bring tile size in line with chunks
-                if rem < chunk[0]/2:
-                    tiling_recommends['size'][dim] = (tile, tile - rem)
-                else:
-                    tiling_recommends['size'][dim] = (tile, tile + (chunk[0] - rem))
+            rem = tile%chunk[0]
+            if rem == 0 or rem == tile: 
+                continue
+
+            # Tiling recommendations should bring tile size in line with chunks
+            if rem < chunk[0]/2:
+                tiling_recommends['size'][dim] = (tile, tile - rem)
+            else:
+                tiling_recommends['size'][dim] = (tile, tile + (chunk[0] - rem))
 
         self.recommendations['tiling'] = tiling_recommends
             
     def _display_recommendations(self):
         """
         Display recommendations for improving tiling and selection arrangements.
+
+        This will print messages, so users will always see recommendations,
+        regardless of their log level.
         """
         recommended = False
         if len(self.recommendations.get('sel',{}).keys()) > 0:
@@ -223,6 +238,9 @@ class ZarrParallelAssembler:
             logger.info('No recommendations for improving tiling or selection arrangements')
 
     def _native_ds(self, chunks: Union[str,dict,None] = 'auto') -> xr.Dataset:
+        """
+        Open native dataset with no transforms.
+        """
         return xr.open_dataset(self.uri, engine=self.engine, chunks=chunks)
 
     def _transform_ds(self, chunks: Union[str,dict,None] = 'auto'):
@@ -311,7 +329,7 @@ class ZarrParallelAssembler:
             list(self.dim_spec.keys())
         )
         actual_workers = 1
-        for dim, dinf in self.dimensions.items():
+        for dim in self.dimensions.keys():
 
             total_region = self.dim_spec[dim]['total_region']
             region_min   = self.dim_spec[dim]['source_min']
@@ -361,7 +379,7 @@ class ZarrParallelAssembler:
                 regional_transforms.append(transform)
         return regional_transforms
 
-    def _reconfigure_regions(self, num_workers: int, memory_limit: str = "2GB") -> tuple:
+    def _reconfigure_regions(self, num_workers: int) -> tuple:
         """
         Reconfigure regions based on the reconfigure parameter
         """
@@ -376,6 +394,7 @@ class ZarrParallelAssembler:
                 # Total region is the full size of the array at this point in each fine_dim
 
                 primary_dim = list(self.tiler_transform.keys())[0]
+
                 # Primary dimension for batch dim parallelisation
                 self.batch_dim_worker_size = math.ceil(
                     self.dim_spec[primary_dim]['total_region']/self.tiler_transform[primary_dim]
@@ -423,7 +442,8 @@ class ZarrParallelAssembler:
         Assemble output chunks
         
         If no output chunking is defined, leave empty.
-        If one or more dimensions are defined, fill rest with source chunks
+        If one or more dimensions are defined, fill chunks for all dimensions.
+        Chunk size defined either by user, or as the minimum of source chunk size and new region size.
         """
 
         if self.reconfigure == 'tiled':
@@ -588,11 +608,15 @@ class ZarrParallelAssembler:
         :param generate_stats: bool. Not currently implemented. Option to generate stats on the caching process, such as time taken, memory used etc.
         """
 
+        if not isinstance(cache_store, str):
+            cache_store = str(cache_store)
+
         if deploy_mode == 'series':
             logger.info('Writing unparallelised dataset')
             self._transform_ds()
             for ds in self._ds:
 
+                # Specify output chunks, although this will not rechunk directly.
                 ds.chunk(self._output_chunks())
 
                 ds = self._override_global_attrs(ds)
@@ -656,8 +680,12 @@ class ZarrParallelAssembler:
             self._create_empty_zarr(worker_config)
 
         else:
+            # Resume existing workflow
             actual_workers = simultaneous_worker_limit
             logger.info(f'Resuming with {actual_workers} workers')
+
+            if not os.path.isfile(worker_config_file):
+                raise ValueError('No worker config file found for resuming.')
 
         match deploy_mode:
             case 'SLURM':
@@ -686,4 +714,4 @@ class ZarrParallelAssembler:
                 )
 
         if not status:
-            raise ValueError
+            raise ValueError('Caching status unsuccessful. Check worker logs for more details.')

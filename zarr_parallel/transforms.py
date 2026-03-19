@@ -2,10 +2,11 @@ __author__    = "Daniel Westwood"
 __contact__   = "daniel.westwood@stfc.ac.uk"
 __copyright__ = "Copyright 2026 United Kingdom Research and Innovation"
 
-import xarray as xr
-import numpy as np
-from typing import Union
 import logging
+from typing import Union
+
+import numpy as np
+import xarray as xr
 
 from zarr_parallel.utils import logstream
 
